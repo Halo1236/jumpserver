@@ -99,7 +99,7 @@ class SystemUserSerializer(AuthSerializerMixin, BulkOrgResourceModelSerializer):
         if self.instance:
             queryset = queryset.exclude(id=self.instance.id)
         exists = queryset.exists()
-        if not exists:
+        if not exists or protocol == "ssh":
             return username_same_with_user
         error = _("Username same with user with protocol {} only allow 1").format(protocol)
         raise serializers.ValidationError(error)
