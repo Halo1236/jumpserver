@@ -55,7 +55,7 @@ def check_asset_permission_expired():
     UserGrantedTreeRefreshController.add_need_refresh_by_asset_perm_ids_cross_orgs(asset_perm_ids)
 
 
-@register_as_period_task(crontab='0 10 * * *')
+# @register_as_period_task(crontab='0 10 * * *')
 @shared_task()
 @atomic()
 @tmp_to_root_org()
@@ -91,7 +91,7 @@ def check_asset_permission_will_expired():
             AssetPermsWillExpireForOrgAdminMsg(org_admin, perms, org).publish_async()
 
 
-@register_as_period_task(crontab='0 10 * * *')
+# @register_as_period_task(crontab='0 10 * * *')
 @shared_task()
 @atomic()
 @tmp_to_root_org()
