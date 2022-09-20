@@ -27,7 +27,6 @@ from common.db.models import ChoiceSet
 from users.exceptions import MFANotEnabled
 from ..signals import post_user_change_password
 
-
 __all__ = ['User', 'UserPasswordHistory']
 
 logger = get_logger(__file__)
@@ -491,6 +490,8 @@ class MFAMixin:
 
     @staticmethod
     def mfa_is_otp():
+        if settings.OTP_IN_API:
+            return False
         if settings.OTP_IN_RADIUS:
             return False
         return True
@@ -503,6 +504,23 @@ class MFAMixin:
             return True
         return False
 
+    def check_otp_api(self, code):
+        import requests
+        from requests import RequestException
+
+        data = {
+            "username": self.username,
+            "code": code,
+        }
+        logger.error(data, exc_info=True)
+        try:
+            response = requests.post(url=settings.OTP_SERVER_URL, json=data)
+            if response.status_code == 200:
+                return True
+        except RequestException as e:
+            logger.error(e, exc_info=True)
+            return False
+
     def check_otp(self, code):
         from ..utils import check_otp_code
         return check_otp_code(self.otp_secret_key, code)
@@ -511,7 +529,9 @@ class MFAMixin:
         if not self.mfa_enabled:
             raise MFANotEnabled
 
-        if settings.OTP_IN_RADIUS:
+        if settings.OTP_IN_API:
+            return self.check_otp_api(code)
+        elif settings.OTP_IN_RADIUS:
             return self.check_radius(code)
         else:
             return self.check_otp(code)
