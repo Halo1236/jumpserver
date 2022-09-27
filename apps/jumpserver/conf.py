@@ -206,8 +206,10 @@ class Config(dict):
         'RADIUS_SECRET': '',
         'RADIUS_ENCRYPT_PASSWORD': True,
         'OTP_IN_RADIUS': False,
+
         'OTP_IN_API': False,
         'OTP_SERVER_URL': '',
+        'OTP_SERVER_PARAMS': '',
 
         'AUTH_CAS': False,
         'CAS_SERVER_URL': "http://host/cas/",

@@ -6,6 +6,8 @@ import base64
 import string
 import random
 import datetime
+import requests
+from requests import RequestException
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
@@ -505,21 +507,24 @@ class MFAMixin:
         return False
 
     def check_otp_api(self, code):
-        import requests
-        from requests import RequestException
-
         data = {
-            "username": self.username,
+            "email": self.email,
             "code": code,
+            "callFrom": settings.OTP_SERVER_PARAMS
         }
-        logger.error(data, exc_info=True)
+        # 返回code参数说明
+        # {"BLOCKED":3,"ERROR":5,"EXPIRED":4,"FAIL":1,"SUCCESS":0,"USER_NOT_EXIST":2}
         try:
             response = requests.post(url=settings.OTP_SERVER_URL, json=data)
             if response.status_code == 200:
-                return True
+                result = response.json()
+                if result.get('code', 5) == 0:
+                    return True
+                else:
+                    logger.error(result.get('msg', ''))
         except RequestException as e:
             logger.error(e, exc_info=True)
-            return False
+        return False
 
     def check_otp(self, code):
         from ..utils import check_otp_code
