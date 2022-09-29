@@ -518,10 +518,10 @@ class MFAMixin:
             response = requests.post(url=settings.OTP_SERVER_URL, json=data)
             if response.status_code == 200:
                 result = response.json()
-                if result.get('code', 5) == 0:
+                if result.get('success', False):
                     return True
                 else:
-                    logger.error(result.get('msg', ''))
+                    logger.error(result)
         except RequestException as e:
             logger.error(e, exc_info=True)
         return False
