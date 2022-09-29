@@ -311,7 +311,7 @@ class AuthMixin:
         self.request.session['auth_mfa'] = 1
         self.request.session['auth_mfa_time'] = time.time()
         self.request.session['auth_mfa_type'] = 'otp'
-        self.request.session['auth_mfa_required'] = ''
+        self.request.session['auth_mfa_required'] = 0
 
     def check_mfa_is_block(self, username, ip, raise_exception=True):
         if MFABlockUtils(username, ip).is_block():
