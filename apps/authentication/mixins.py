@@ -298,6 +298,8 @@ class AuthMixin:
     def check_user_mfa_if_need(self, user):
         if self.request.session.get('auth_mfa'):
             return
+        if settings.OTP_IN_RADIUS:
+            return
         if not user.mfa_enabled:
             return
         unset, url = user.mfa_enabled_but_not_set()
@@ -309,6 +311,7 @@ class AuthMixin:
         self.request.session['auth_mfa'] = 1
         self.request.session['auth_mfa_time'] = time.time()
         self.request.session['auth_mfa_type'] = 'otp'
+        self.request.session['auth_mfa_required'] = ''
 
     def check_mfa_is_block(self, username, ip, raise_exception=True):
         if MFABlockUtils(username, ip).is_block():
