@@ -1516,8 +1516,8 @@ msgstr "一次性密码"
 
 #: authentication/templates/authentication/login_otp.html:23
 #: users/templates/users/user_verify_mfa.html:13
-msgid "Open MFA Authenticator and enter the 6-bit dynamic code"
-msgstr "请打开MFA验证器，输入6位动态码"
+msgid "Open Enterprise WeChat-Workbench-Dynamic Password Application and enter the 6-bit dynamic code"
+msgstr "请打开企业微信-工作台-动态口令应用，输入6位动态码"
 
 #: authentication/templates/authentication/login_otp.html:26
 #: users/templates/users/user_otp_check_password.html:15
@@ -1528,8 +1528,8 @@ msgid "Next"
 msgstr "下一步"
 
 #: authentication/templates/authentication/login_otp.html:29
-msgid "Can't provide security? Please contact the administrator!"
-msgstr "如果不能提供多因子认证验证码，请联系管理员!"
+msgid "Can't provide security? Please contact the SSO Service Account!"
+msgstr "如果不能提供多因子认证验证码，请联系 SSO 服务号!"
 
 #: authentication/templates/authentication/login_wait_confirm.html:41
 msgid "Refresh"
