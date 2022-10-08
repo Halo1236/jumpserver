@@ -46,7 +46,6 @@ AUTH_LDAP_SYNC_CRONTAB = CONFIG.AUTH_LDAP_SYNC_CRONTAB
 AUTH_LDAP_SYNC_ORG_ID = CONFIG.AUTH_LDAP_SYNC_ORG_ID
 AUTH_LDAP_USER_LOGIN_ONLY_IN_USERS = CONFIG.AUTH_LDAP_USER_LOGIN_ONLY_IN_USERS
 
-
 # ==============================================================================
 # 认证 OpenID 配置参数
 # 参考: https://django-oidc-rp.readthedocs.io/en/stable/settings.html
@@ -148,7 +147,6 @@ AUTH_TEMP_TOKEN = CONFIG.AUTH_TEMP_TOKEN
 TOKEN_EXPIRATION = CONFIG.TOKEN_EXPIRATION
 OTP_IN_RADIUS = CONFIG.OTP_IN_RADIUS
 
-
 RBAC_BACKEND = 'rbac.backends.RBACBackend'
 AUTH_BACKEND_MODEL = 'authentication.backends.base.JMSModelBackend'
 AUTH_BACKEND_PUBKEY = 'authentication.backends.pubkey.PublicKeyAuthBackend'
@@ -165,12 +163,11 @@ AUTH_BACKEND_AUTH_TOKEN = 'authentication.backends.sso.AuthorizationTokenAuthent
 AUTH_BACKEND_SAML2 = 'authentication.backends.saml2.SAML2Backend'
 AUTH_BACKEND_TEMP_TOKEN = 'authentication.backends.token.TempTokenAuthBackend'
 
-
 AUTHENTICATION_BACKENDS = [
     # 只做权限校验
     RBAC_BACKEND,
     # 密码形式
-    AUTH_BACKEND_MODEL,  AUTH_BACKEND_PUBKEY, AUTH_BACKEND_LDAP, AUTH_BACKEND_RADIUS,
+    AUTH_BACKEND_MODEL, AUTH_BACKEND_PUBKEY, AUTH_BACKEND_LDAP, AUTH_BACKEND_RADIUS,
     # 跳转形式
     AUTH_BACKEND_CAS, AUTH_BACKEND_OIDC_PASSWORD, AUTH_BACKEND_OIDC_CODE, AUTH_BACKEND_SAML2,
     # 扫码模式
@@ -179,6 +176,37 @@ AUTHENTICATION_BACKENDS = [
     AUTH_BACKEND_AUTH_TOKEN, AUTH_BACKEND_SSO, AUTH_BACKEND_TEMP_TOKEN
 ]
 
+
+def get_file_md5(filepath):
+    import hashlib
+    # 创建md5对象
+    m = hashlib.md5()
+    with open(filepath, 'rb') as f:
+        while True:
+            data = f.read(4096)
+            if not data:
+                break
+            # 更新md5对象
+            m.update(data)
+    # 返回md5对象
+    return m.hexdigest()
+
+
+MFA_BACKEND_OTP = 'authentication.mfa.otp.MFAOtp'
+MFA_BACKEND_RADIUS = 'authentication.mfa.radius.MFARadius'
+MFA_BACKEND_SMS = 'authentication.mfa.sms.MFASms'
+MFA_BACKEND_CUSTOM = 'authentication.mfa.custom.MFACustom'
+
+MFA_BACKENDS = [MFA_BACKEND_OTP, MFA_BACKEND_RADIUS, MFA_BACKEND_SMS]
+
+MFA_CUSTOM = CONFIG.MFA_CUSTOM
+MFA_CUSTOM_FILE_MD5 = CONFIG.MFA_CUSTOM_FILE_MD5
+MFA_CUSTOM_FILE_PATH = os.path.join(PROJECT_DIR, 'data', 'mfa', 'main.py')
+if MFA_CUSTOM and MFA_CUSTOM_FILE_MD5 == get_file_md5(MFA_CUSTOM_FILE_PATH):
+    # 自定义多因子认证模块
+    MFA_BACKENDS.append(MFA_BACKEND_CUSTOM)
+
+AUTHENTICATION_BACKENDS_THIRD_PARTY = [AUTH_BACKEND_OIDC_CODE, AUTH_BACKEND_CAS, AUTH_BACKEND_SAML2]
 ONLY_ALLOW_EXIST_USER_AUTH = CONFIG.ONLY_ALLOW_EXIST_USER_AUTH
 ONLY_ALLOW_AUTH_FROM_SOURCE = CONFIG.ONLY_ALLOW_AUTH_FROM_SOURCE
 

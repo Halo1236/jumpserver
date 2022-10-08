@@ -163,6 +163,10 @@ class Config(dict):
         'LOGIN_URL': reverse_lazy('authentication:login'),
 
         # Custom Config
+        'MFA_CUSTOM': False,
+        'MFA_CUSTOM_FILE_MD5': '',
+
+        # Custom Config
         # Auth LDAP settings
         'AUTH_LDAP': False,
         'AUTH_LDAP_SERVER_URI': 'ldap://localhost:389',
