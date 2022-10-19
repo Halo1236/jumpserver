@@ -49,6 +49,7 @@ def on_cas_user_authenticated(sender, user, created, **kwargs):
         raise PermissionDenied(f'Not allow non-exist user auth: {user.username}')
     if created:
         user.source = user.Source.cas.value
+        user.mfa_level = 2
         user.save()
 
 
@@ -58,6 +59,7 @@ def on_ldap_create_user(sender, user, ldap_user, **kwargs):
         exists = User.objects.filter(username=user.username).exists()
         if not exists:
             user.source = user.Source.ldap.value
+            user.mfa_level = 2
             user.save()
 
 
@@ -73,6 +75,7 @@ def on_openid_create_or_update_user(sender, request, user, created, name, userna
             "Set user source is: {}".format(user, User.Source.openid.value)
         )
         user.source = User.Source.openid.value
+        user.mfa_level = 2
         user.save()
     elif not created and settings.AUTH_OPENID_ALWAYS_UPDATE_USER:
         logger.debug(
@@ -83,4 +86,5 @@ def on_openid_create_or_update_user(sender, request, user, created, name, userna
         user.name = name
         user.username = username
         user.email = email
+        user.mfa_level = 2
         user.save()
