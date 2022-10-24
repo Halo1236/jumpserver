@@ -163,7 +163,7 @@ class CommandStore(object):
     def count(self, **query):
         try:
             body = self.get_query_body(**query)
-            data = self.es.count(index=self.query_index, doc_type=self.doc_type, body=body)
+            data = self.es.count(index=self.index, doc_type=self.doc_type, body=body)
             count = data["count"]
         except Exception as e:
             logger.error('ES count error: {}'.format(e))
