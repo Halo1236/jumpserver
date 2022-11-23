@@ -9,6 +9,7 @@ from django.utils.functional import LazyObject
 from django.db.models.signals import m2m_changed
 from django.db.models.signals import post_save, post_delete, pre_delete
 
+from common.decorator import on_transaction_commit
 from orgs.utils import tmp_to_org
 from orgs.models import Organization, OrganizationMember
 from orgs.hands import set_current_org, Node, get_current_org
@@ -18,7 +19,6 @@ from common.const.signals import PRE_REMOVE, POST_REMOVE
 from common.signals import django_ready
 from common.utils import get_logger
 from common.utils.connection import RedisPubSub
-
 
 logger = get_logger(__file__)
 
@@ -94,7 +94,7 @@ def on_org_delete(sender, instance, **kwargs):
 def _remove_users(model, users, org):
     with tmp_to_org(org):
         if not isinstance(users, (tuple, list, set)):
-            users = (users, )
+            users = (users,)
 
         m2m_model = model.users.through
         reverse = model.users.reverse
@@ -167,3 +167,13 @@ def on_org_user_changed(action, instance, reverse, pk_set, **kwargs):
 
             leaved_users = set(pk_set) - set(org.members.filter(id__in=user_pk_set).values_list('id', flat=True))
             _clear_users_from_org(org, leaved_users)
+
+
+@receiver(post_save, sender=User)
+@on_transaction_commit
+def on_user_created_set_default_org(sender, instance, created, **kwargs):
+    if not created:
+        return
+    if instance.orgs.count() > 0:
+        return
+    Organization.default().members.add(instance)
