@@ -17,7 +17,6 @@ from common.utils import random_string, signer
 from common.utils import (
     ssh_key_string_to_obj, ssh_key_gen, get_logger, lazyproperty, parse_ssh_public_key_str
 )
-from common.utils.encode import ssh_pubkey_gen
 from common import fields
 from orgs.mixins.models import OrgModelMixin
 
@@ -67,7 +66,7 @@ class AuthMixin:
             public_key = self.public_key
         elif self.private_key:
             try:
-                public_key = parse_ssh_public_key_str(self.private_key)
+                public_key = parse_ssh_public_key_str(self.private_key,password=self.password)
             except IOError as e:
                 return str(e)
         else:
@@ -99,9 +98,12 @@ class AuthMixin:
         return key_path
 
     def get_private_key(self):
-        if not self.private_key:
+        if not self.private_key_obj:
             return None
-        return self.private_key
+        string_io = io.StringIO()
+        self.private_key_obj.write_private_key(string_io)
+        private_key = string_io.getvalue()
+        return private_key
 
     @property
     def public_key_obj(self):

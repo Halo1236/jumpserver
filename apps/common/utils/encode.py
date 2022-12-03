@@ -68,7 +68,12 @@ class Signer(metaclass=Singleton):
             return None
 
 
-_supported_paramiko_ssh_key_types = (paramiko.RSAKey, paramiko.DSSKey, paramiko.Ed25519Key)
+_supported_paramiko_ssh_key_types = (
+    paramiko.RSAKey,
+    paramiko.DSSKey,
+    paramiko.Ed25519Key,
+    paramiko.ECDSAKey,
+)
 
 
 def ssh_key_string_to_obj(text, password=None):
@@ -78,9 +83,10 @@ def ssh_key_string_to_obj(text, password=None):
             continue
         try:
             key = ssh_key_type.from_private_key(StringIO(text), password=password)
-            return key
         except paramiko.SSHException:
             pass
+        else:
+            return key
     return key
 
 
@@ -94,7 +100,7 @@ def ssh_private_key_gen(private_key, password=None):
 
 def ssh_pubkey_gen(private_key=None, username='jumpserver', hostname='localhost', password=None):
     private_key = ssh_private_key_gen(private_key, password=password)
-    if not isinstance(private_key, (paramiko.RSAKey, paramiko.DSSKey)):
+    if not isinstance(private_key, _supported_paramiko_ssh_key_types):
         raise IOError('Invalid private key')
 
     public_key = "%(key_type)s %(key_content)s %(username)s@%(hostname)s" % {
@@ -133,17 +139,6 @@ def ssh_key_gen(length=2048, type='rsa', password=None, username='jumpserver', h
 
 
 def validate_ssh_private_key(text, password=None):
-    if isinstance(text, str):
-        try:
-            text = text.encode("utf-8")
-        except UnicodeDecodeError:
-            return False
-    if isinstance(password, str):
-        try:
-            password = password.encode("utf-8")
-        except UnicodeDecodeError:
-            return False
-
     key = parse_ssh_private_key_str(text, password=password)
     return bool(key)
 
@@ -162,8 +157,9 @@ def parse_ssh_public_key_str(text: bytes = "", password=None) -> str:
     private_key = _parse_ssh_private_key(text, password=password)
     if private_key is None:
         return ""
-    public_key_bytes = private_key.public_key().public_bytes(serialization.Encoding.OpenSSH,
-                                                             serialization.PublicFormat.OpenSSH)
+    public_key_bytes = private_key.public_key().public_bytes(
+        serialization.Encoding.OpenSSH,
+        serialization.PublicFormat.OpenSSH)
     return public_key_bytes.decode('utf-8')
 
 
@@ -190,11 +186,16 @@ def _parse_ssh_private_key(text, password=None):
                 return None
 
     try:
-        private_key = serialization.load_ssh_private_key(text, password=password)
-        return private_key
+        if is_openssh_format_key(text):
+            return serialization.load_ssh_private_key(text, password=password)
+        return serialization.load_pem_private_key(text, password=password)
     except (ValueError, TypeError):
         pass
     return None
+
+
+def is_openssh_format_key(text: bytes):
+    return text.startswith(b"-----BEGIN OPENSSH PRIVATE KEY-----")
 
 
 def validate_ssh_public_key(text):
@@ -233,10 +234,28 @@ def make_signature(access_key_secret, date=None):
     return content_md5(data)
 
 
-def encrypt_password(password, salt=None):
-    from passlib.hash import sha512_crypt
-    if password:
+def encrypt_password(password, salt=None, algorithm='sha512'):
+    from passlib.hash import sha512_crypt, des_crypt
+
+    def sha512():
         return sha512_crypt.using(rounds=5000).hash(password, salt=salt)
+
+    def des():
+        return des_crypt.hash(password, salt=salt[:2])
+
+    support_algorithm = {
+        'sha512': sha512,
+        'des': des
+    }
+
+    if isinstance(algorithm, str):
+        algorithm = algorithm.lower()
+
+    if algorithm not in support_algorithm.keys():
+        algorithm = 'sha512'
+
+    if password and support_algorithm[algorithm]:
+        return support_algorithm[algorithm]()
     return None
 
 
@@ -250,9 +269,6 @@ signer = get_signer()
 
 def ensure_last_char_is_ascii(data):
     remain = ''
-
-
-secret_pattern = re.compile(r'password|secret|key', re.IGNORECASE)
 
 
 def data_to_json(data, sort_keys=True, indent=2, cls=None):
