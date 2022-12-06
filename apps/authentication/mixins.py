@@ -17,7 +17,7 @@ from django.shortcuts import reverse, redirect
 
 from common.utils import get_object_or_none, get_request_ip, get_logger, bulk_get, FlashMessageUtil
 from users.models import User
-from users.utils import LoginBlockUtil, MFABlockUtils
+from users.utils import LoginBlockUtil, MFABlockUtils, MFASessionCacheUtils
 from . import errors
 from .utils import rsa_decrypt
 from .signals import post_auth_success, post_auth_failed
@@ -157,7 +157,7 @@ class AuthMixin:
             data = request.POST
 
         items = ['username', 'password', 'challenge', 'public_key', 'auto_login']
-        username, password, challenge, public_key, auto_login = bulk_get(data, *items,  default='')
+        username, password, challenge, public_key, auto_login = bulk_get(data, *items, default='')
         password = password + challenge.strip()
         ip = self.get_request_ip()
         self._set_partial_credential_error(username=username, ip=ip, request=request)
@@ -295,8 +295,29 @@ class AuthMixin:
                 return user
         return self.check_user_auth(decrypt_passwd=decrypt_passwd)
 
+    def _check_terminal_session_cache(self, user: User):
+        ip = self.get_request_ip()
+        if MFASessionCacheUtils(user.id, user.username, ip).is_cache():
+            return True
+        else:
+            return False
+
     def check_user_mfa_if_need(self, user):
         if self.request.session.get('auth_mfa'):
+            ip = self.get_request_ip()
+            MFASessionCacheUtils(user.id, user.username, ip).set_cache()
+            return
+        if hasattr(self.request, 'data'):
+            public_key = self.request.data.get("public_key")
+            login_type = self.request.data.get("login_type")
+        else:
+            public_key = self.request.POST.get("public_key")
+            login_type = self.request.POST.get("login_type")
+
+        if self._check_terminal_session_cache(user) and login_type == 'T' and settings.OTP_SESSION_REUSE:
+            return
+
+        if public_key and login_type == 'T' and settings.OTP_SSH_KEY_SKIP:
             return
         if settings.OTP_IN_RADIUS:
             return

@@ -210,6 +210,9 @@ class Config(dict):
         'OTP_IN_API': False,
         'OTP_SERVER_URL': '',
         'OTP_SERVER_PARAMS': '',
+        'OTP_SSH_KEY_SKIP': False,
+        'OTP_SESSION_REUSE': False,
+        'OTP_SESSION_REUSE_LIMIT_TIME': 14400,
 
         'AUTH_CAS': False,
         'CAS_SERVER_URL': "http://host/cas/",
