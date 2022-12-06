@@ -21,7 +21,7 @@ from rest_framework.request import Request
 from acls.models import LoginACL
 from common.utils import get_request_ip_or_data, get_request_ip, get_logger, bulk_get, FlashMessageUtil
 from users.models import User
-from users.utils import LoginBlockUtil, MFABlockUtils, LoginIpBlockUtil
+from users.utils import LoginBlockUtil, MFABlockUtils, LoginIpBlockUtil, MFASessionCacheUtils
 from . import errors
 from .signals import post_auth_success, post_auth_failed
 
@@ -225,9 +225,30 @@ class MFAMixin:
             return
         self._do_check_user_mfa(code, mfa_type, user=user)
 
+    def _check_terminal_session_cache(self, user: User):
+        ip = self.get_request_ip()
+        if MFASessionCacheUtils(user.id, user.username, ip).is_cache():
+            return True
+        else:
+            return False
+
     def check_user_mfa_if_need(self, user):
         if self.request.session.get('auth_mfa') and \
                 self.request.session.get('auth_mfa_username') == user.username:
+            ip = self.get_request_ip()
+            MFASessionCacheUtils(user.id, user.username, ip).set_cache()
+            return
+        if hasattr(self.request, 'data'):
+            public_key = self.request.data.get("public_key")
+            login_type = self.request.data.get("login_type")
+        else:
+            public_key = self.request.POST.get("public_key")
+            login_type = self.request.POST.get("login_type")
+
+        if self._check_terminal_session_cache(user) and login_type == 'T' and settings.OTP_SESSION_REUSE:
+            return
+
+        if public_key and login_type == 'T' and settings.OTP_SSH_KEY_SKIP:
             return
         if not user.mfa_enabled:
             return
