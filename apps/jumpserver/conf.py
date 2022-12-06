@@ -250,6 +250,10 @@ class Config(dict):
         'MFA_CUSTOM': False,
         'MFA_CUSTOM_FILE_MD5': '',
 
+        'OTP_SSH_KEY_SKIP': False,
+        'OTP_SESSION_REUSE': False,
+        'OTP_SESSION_REUSE_LIMIT_TIME': 14400,
+
         'SMS_CUSTOM_FILE_MD5': '',
 
         # 临时密码

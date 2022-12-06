@@ -230,6 +230,20 @@ class LoginIpBlockUtil(BlockGlobalIpUtilBase):
     BLOCK_KEY_TMPL = "_LOGIN_BLOCK_{}"
 
 
+class MFASessionCacheUtils:
+    CACHE_KEY_TMPL = "_MFA_SESSION_CACHE_{}_{}_{}"
+
+    def __init__(self, uid, username, ip):
+        self.cache_key = self.CACHE_KEY_TMPL.format(uid, username, ip)
+        self.key_ttl = int(settings.OTP_SESSION_REUSE_LIMIT_TIME)
+
+    def set_cache(self):
+        cache.set(self.cache_key, True, self.key_ttl)
+
+    def is_cache(self):
+        return bool(cache.get(self.cache_key))
+
+
 def construct_user_email(username, email, email_suffix=''):
     if email is None:
         email = ''
