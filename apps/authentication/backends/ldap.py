@@ -49,7 +49,6 @@ class LDAPAuthorizationBackend(JMSBaseAuthBackend, LDAPBackend):
             user = model.objects.get(**{lookup: query_value})
         except model.DoesNotExist:
             user = model(**{query_field: query_value})
-            user.mfa_level = 2
             built = True
         else:
             built = False
