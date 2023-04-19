@@ -206,7 +206,8 @@ class ApplicationTreeNodeMixin:
                 'data': {
                     'category': self.category,
                     'type': self.type,
-                    'attrs': self._attrs_to_tree()
+                    'attrs': self._attrs_to_tree(),
+                    'comment': self.comment
                 }
             }
         })
