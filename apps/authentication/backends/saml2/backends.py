@@ -6,6 +6,7 @@ from django.db import transaction
 
 from common.utils import get_logger
 from authentication.errors import reason_choices, reason_user_invalid
+from users.models import UserGroup
 from .signals import (
     saml2_create_or_update_user
 )
@@ -30,6 +31,13 @@ class SAML2Backend(JMSModelBackend):
         user, created = get_user_model().objects.get_or_create(
             username=saml_user_data['username'], defaults=saml_user_data
         )
+        if 'groups' in saml_user_data:
+            for group_name in saml_user_data['groups']:
+                try:
+                    group = UserGroup.objects.get(name=group_name)
+                    group.users.add(user)
+                except UserGroup.DoesNotExist:
+                    continue
         logger.debug(log_prompt.format("user: {}|created: {}".format(user, created)))
 
         logger.debug(log_prompt.format("Send signal => saml2 create or update user"))
