@@ -31,6 +31,7 @@ class SAML2Backend(JMSModelBackend):
         user, created = get_user_model().objects.get_or_create(
             username=saml_user_data['username'], defaults=saml_user_data
         )
+        user.groups.set([])
         if 'groups' in saml_user_data:
             for group_name in saml_user_data['groups']:
                 try:
