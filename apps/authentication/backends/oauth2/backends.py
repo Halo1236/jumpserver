@@ -63,8 +63,10 @@ class OAuth2Backend(JMSModelBackend):
 
     @staticmethod
     def get_response_data(response_data):
-        if response_data.get('data') is not None:
-            response_data = response_data['data']
+        if response_data:
+            access_token_str = response_data.split('&')[0]
+            if access_token_str:
+                response_data = {'access_token': access_token_str.replace('access_token=', '')}
         return response_data
 
     @staticmethod
@@ -104,10 +106,13 @@ class OAuth2Backend(JMSModelBackend):
         headers = {
             'Accept': 'application/json'
         }
-        access_token_response = requests_func(access_token_url, headers=headers)
+        if token_method == 'post':
+            access_token_response = requests_func(access_token_url, headers=headers, json=query_dict)
+        else:
+            access_token_response = requests_func(access_token_url, headers=headers)
         try:
             access_token_response.raise_for_status()
-            access_token_response_data = access_token_response.json()
+            access_token_response_data = access_token_response.text
             response_data = self.get_response_data(access_token_response_data)
         except Exception as e:
             error = "Json access token response error, access token response " \
