@@ -38,6 +38,7 @@ class SendAndVerifySMSUtil:
         self.timeout = timeout or self.TIMEOUT
         self.key_suffix = key_suffix or str(phone)
         self.key = self.KEY_TMPL.format(self.key_suffix)
+        self.verify_key = self.key + '_verify'
 
     def gen_and_send(self):
         """
@@ -62,6 +63,7 @@ class SendAndVerifySMSUtil:
 
     def clear(self):
         cache.delete(self.key)
+        cache.delete(self.verify_key)
 
     def send(self, code):
         """
@@ -73,6 +75,11 @@ class SendAndVerifySMSUtil:
         logger.info(f'Send sms verify code to {self.phone}: {code}')
 
     def verify(self, code):
+        times = cache.get(self.verify_key, 0)
+        if times >= 3:
+            self.clear()
+            raise CodeExpired
+        cache.set(self.verify_key, times + 1, timeout=self.timeout)
         right = cache.get(self.key)
         if not right:
             raise CodeExpired

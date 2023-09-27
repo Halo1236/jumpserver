@@ -19,6 +19,7 @@ def random_ip():
 
 
 def random_string(length, lower=True, upper=True, digit=True, special_char=False):
+    random.seed()
     chars = string.ascii_letters
     if digit:
         chars += string.digits
