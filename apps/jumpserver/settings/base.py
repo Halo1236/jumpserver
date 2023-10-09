@@ -51,6 +51,10 @@ LOG_LEVEL = CONFIG.LOG_LEVEL
 
 ALLOWED_HOSTS = ['*']
 
+# https://docs.djangoproject.com/en/4.1/ref/settings/#std-setting-CSRF_TRUSTED_ORIGINS
+CSRF_TRUSTED_ORIGINS = CONFIG.CSRF_TRUSTED_ORIGINS.split(',') if CONFIG.CSRF_TRUSTED_ORIGINS else []
+
+
 # Max post update field num
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 

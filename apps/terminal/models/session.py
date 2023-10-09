@@ -124,6 +124,7 @@ class Session(OrgModelMixin):
                     return rel_path
             except:
                 pass
+
     @property
     def asset_obj(self):
         return Asset.objects.get(id=self.asset_id)
