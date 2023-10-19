@@ -116,6 +116,7 @@ special_pid_mapper = {
     "rbac.view_workbench": "view_workbench",
     "rbac.view_webterminal": "view_workbench",
     "rbac.view_filemanager": "view_workbench",
+    "rbac.view_systemtools": "view_workbench",
     'tickets.view_ticket': 'tickets'
 }
 
