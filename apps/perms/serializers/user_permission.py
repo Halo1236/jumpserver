@@ -8,7 +8,8 @@ from rest_framework import serializers
 from accounts.models import Account
 from assets.const import Category, AllTypes
 from assets.models import Node, Asset, Platform
-from assets.serializers.asset.common import AssetProtocolsPermsSerializer, AssetLabelSerializer
+from assets.serializers.asset.common import AssetProtocolsPermsSerializer, AssetLabelSerializer, \
+    AssetCustomLabelSerializer
 from common.serializers.fields import ObjectRelatedField, LabeledChoiceField
 from orgs.mixins.serializers import OrgResourceModelSerializerMixin
 from perms.serializers.permission import ActionChoicesField
@@ -26,6 +27,7 @@ class AssetPermedSerializer(OrgResourceModelSerializerMixin):
     category = LabeledChoiceField(choices=Category.choices, read_only=True, label=_('Category'))
     type = LabeledChoiceField(choices=AllTypes.choices(), read_only=True, label=_('Type'))
     labels = AssetLabelSerializer(many=True, required=False, label=_('Label'))
+    custom_labels = AssetCustomLabelSerializer(many=True, required=False, label=_('Custom Labels'))
     domain = ObjectRelatedField(required=False, queryset=Node.objects, label=_('Domain'))
 
     class Meta:
@@ -33,7 +35,7 @@ class AssetPermedSerializer(OrgResourceModelSerializerMixin):
         only_fields = [
             'id', 'name', 'address', 'domain', 'platform',
             'comment', 'org_id', 'is_active', 'date_verified',
-            'created_by', 'date_created', 'connectivity', 'nodes', 'labels'
+            'created_by', 'date_created', 'connectivity', 'nodes', 'labels', 'custom_labels'
         ]
         fields = only_fields + ['protocols', 'category', 'type'] + ['org_name']
         read_only_fields = fields
@@ -41,7 +43,7 @@ class AssetPermedSerializer(OrgResourceModelSerializerMixin):
     @classmethod
     def setup_eager_loading(cls, queryset):
         """ Perform necessary eager loading of data. """
-        queryset = queryset.prefetch_related('domain', 'nodes', 'labels') \
+        queryset = queryset.prefetch_related('domain', 'nodes', 'labels', 'custom_labels') \
             .prefetch_related('platform', 'protocols') \
             .annotate(category=F("platform__category")) \
             .annotate(type=F("platform__type"))

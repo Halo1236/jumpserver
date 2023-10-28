@@ -17,13 +17,14 @@ from common.serializers.common import DictSerializer
 from common.serializers.fields import LabeledChoiceField
 from orgs.mixins.serializers import BulkOrgResourceModelSerializer
 from ...const import Category, AllTypes
-from ...models import Asset, Node, Platform, Label, Protocol
+from ...models import Asset, Node, Platform, Label, Protocol, CustomLabel
 
 __all__ = [
     'AssetSerializer', 'AssetSimpleSerializer', 'MiniAssetSerializer',
     'AssetTaskSerializer', 'AssetsTaskSerializer', 'AssetProtocolsSerializer',
     'AssetDetailSerializer', 'DetailMixin', 'AssetAccountSerializer',
-    'AccountSecretSerializer', 'AssetProtocolsPermsSerializer', 'AssetLabelSerializer'
+    'AccountSecretSerializer', 'AssetProtocolsPermsSerializer', 'AssetLabelSerializer',
+    'AssetCustomLabelSerializer'
 ]
 
 
@@ -55,6 +56,17 @@ class AssetLabelSerializer(serializers.ModelSerializer):
             # 取消默认唯一键的校验
             'id': {'validators': []},
             'name': {'required': False},
+            'value': {'required': False},
+        }
+
+
+class AssetCustomLabelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CustomLabel
+        fields = ['id', 'value']
+        extra_kwargs = {
+            # 取消默认唯一键的校验
+            'id': {'validators': []},
             'value': {'required': False},
         }
 
@@ -121,6 +133,7 @@ class AssetSerializer(BulkOrgResourceModelSerializer, WritableNestedModelSeriali
     category = LabeledChoiceField(choices=Category.choices, read_only=True, label=_('Category'))
     type = LabeledChoiceField(choices=AllTypes.choices(), read_only=True, label=_('Type'))
     labels = AssetLabelSerializer(many=True, required=False, label=_('Label'))
+    custom_labels = AssetCustomLabelSerializer(many=True, required=False, label=_('Custom Labels'))
     protocols = AssetProtocolsSerializer(many=True, required=False, label=_('Protocols'), default=())
     accounts = AssetAccountSerializer(many=True, required=False, allow_null=True, write_only=True, label=_('Account'))
     nodes_display = serializers.ListField(read_only=False, required=False, label=_("Node path"))
@@ -132,7 +145,7 @@ class AssetSerializer(BulkOrgResourceModelSerializer, WritableNestedModelSeriali
         fields_small = fields_mini + ['is_active', 'comment']
         fields_fk = ['domain', 'platform']
         fields_m2m = [
-            'nodes', 'labels', 'protocols',
+            'nodes', 'labels', 'custom_labels', 'protocols',
             'nodes_display', 'accounts',
         ]
         read_only_fields = [
@@ -199,7 +212,7 @@ class AssetSerializer(BulkOrgResourceModelSerializer, WritableNestedModelSeriali
     @classmethod
     def setup_eager_loading(cls, queryset):
         """ Perform necessary eager loading of data. """
-        queryset = queryset.prefetch_related('domain', 'nodes', 'labels', 'protocols') \
+        queryset = queryset.prefetch_related('domain', 'nodes', 'labels', 'custom_labels', 'protocols') \
             .prefetch_related('platform', 'platform__automation') \
             .annotate(category=F("platform__category")) \
             .annotate(type=F("platform__type"))

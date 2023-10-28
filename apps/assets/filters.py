@@ -5,7 +5,7 @@ from rest_framework import filters
 from rest_framework.compat import coreapi, coreschema
 
 from assets.utils import get_node_from_request, is_query_node_all_assets
-from .models import Label
+from .models import Label, CustomLabel
 
 
 class AssetByNodeFilterBackend(filters.BaseFilterBackend):
@@ -120,6 +120,35 @@ class LabelFilterBackend(filters.BaseFilterBackend):
             return queryset.none()
         for label in labels:
             queryset = queryset.filter(labels=label)
+        return queryset
+
+
+class CustomLabelFilterBackend(filters.BaseFilterBackend):
+    sep = ':'
+    query_arg = 'custom_label'
+
+    def get_schema_fields(self, view):
+        example = self.sep.join(['os', 'linux'])
+        return [
+            coreapi.Field(
+                name=self.query_arg, location='query', required=False,
+                type='string', example=example, description=''
+            )
+        ]
+
+    def get_query_custom_labels(self, request):
+        # custom_labels_query = request.query_params.getlist(self.query_arg)
+        # if not custom_labels_query:
+        return None
+
+    def filter_queryset(self, request, queryset, view):
+        custom_labels = self.get_query_custom_labels(request)
+        if custom_labels is None:
+            return queryset
+        if len(custom_labels) == 0:
+            return queryset.none()
+        for custom_label in custom_labels:
+            queryset = queryset.filter(labels=custom_label)
         return queryset
 
 

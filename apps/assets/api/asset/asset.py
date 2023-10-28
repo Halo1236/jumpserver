@@ -11,7 +11,7 @@ from rest_framework.status import HTTP_200_OK
 from accounts.tasks import push_accounts_to_assets_task, verify_accounts_connectivity_task
 from assets import serializers
 from assets.exceptions import NotSupportedTemporarilyError
-from assets.filters import IpInFilterBackend, LabelFilterBackend, NodeFilterBackend
+from assets.filters import IpInFilterBackend, LabelFilterBackend, NodeFilterBackend, CustomLabelFilterBackend
 from assets.models import Asset, Gateway, Platform
 from assets.tasks import test_assets_connectivity_manual, update_assets_hardware_info_manual
 from common.api import SuggestionMixin
@@ -31,6 +31,7 @@ __all__ = [
 
 class AssetFilterSet(BaseFilterSet):
     labels = django_filters.CharFilter(method='filter_labels')
+    custom_labels = django_filters.CharFilter(method='filter_custom_labels')
     platform = django_filters.CharFilter(method='filter_platform')
     domain = django_filters.CharFilter(method='filter_domain')
     type = django_filters.CharFilter(field_name="platform__type", lookup_expr="exact")
@@ -62,7 +63,7 @@ class AssetFilterSet(BaseFilterSet):
         model = Asset
         fields = [
             "id", "name", "address", "is_active", "labels",
-            "type", "category", "platform",
+            "custom_labels", "type", "category", "platform",
         ]
 
     @staticmethod
@@ -94,6 +95,10 @@ class AssetFilterSet(BaseFilterSet):
             queryset = queryset.filter(q).distinct()
         return queryset
 
+    @staticmethod
+    def filter_custom_labels(queryset, name, value):
+        return queryset.filter(custom_labels__value__contains=value)
+
 
 class AssetViewSet(SuggestionMixin, NodeFilterMixin, OrgBulkModelViewSet):
     """
@@ -117,7 +122,7 @@ class AssetViewSet(SuggestionMixin, NodeFilterMixin, OrgBulkModelViewSet):
         ("gathered_info", "assets.view_asset"),
     )
     extra_filter_backends = [
-        LabelFilterBackend, IpInFilterBackend,
+        LabelFilterBackend, CustomLabelFilterBackend, IpInFilterBackend,
         NodeFilterBackend, AttrRulesFilterBackend
     ]
 

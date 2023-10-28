@@ -12,3 +12,4 @@ from .automations import *
 # from ._authbook import *
 # from .cmd_filter import *
 from ._user import *
+from .custom_label import *

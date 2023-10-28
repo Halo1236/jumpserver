@@ -155,6 +155,8 @@ class Asset(NodesRelationMixin, AbsConnectivity, JSONFilterMixin, JMSOrgBaseMode
                                    verbose_name=_("Nodes"))
     is_active = models.BooleanField(default=True, verbose_name=_('Is active'))
     labels = models.ManyToManyField('assets.Label', blank=True, related_name='assets', verbose_name=_("Labels"))
+    custom_labels = models.ManyToManyField('assets.CustomLabel', blank=True, related_name='assets',
+                                           verbose_name=_("Custom Labels"))
     gathered_info = models.JSONField(verbose_name=_('Gathered info'), default=dict, blank=True)  # 资产的一些信息，如 硬件信息
     custom_info = models.JSONField(verbose_name=_('Custom info'), default=dict)
 
@@ -246,6 +248,12 @@ class Asset(NodesRelationMixin, AbsConnectivity, JSONFilterMixin, JMSOrgBaseMode
         names = []
         for n in self.labels.all():
             names.append(n.name + ':' + n.value)
+        return names
+
+    def custom_labels_display(self):
+        names = []
+        for n in self.custom_labels.all():
+            names.append(n.value)
         return names
 
     @lazyproperty

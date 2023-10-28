@@ -7,3 +7,4 @@ from .mixin import *
 from .node import *
 from .platform import *
 from .tree import *
+from .custom_label import *

@@ -10,3 +10,4 @@ from .favorite_asset import *
 from .platform import *
 from .cagegory import *
 from .automations import *
+from .custom_label import *

@@ -23,6 +23,7 @@ router.register(r'domains', api.DomainViewSet, 'domain')
 router.register(r'gateways', api.GatewayViewSet, 'gateway')
 router.register(r'favorite-assets', api.FavoriteAssetViewSet, 'favorite-asset')
 router.register(r'protocol-settings', api.PlatformProtocolViewSet, 'protocol-setting')
+router.register(r'custom-labels', api.CustomLabelViewSet, 'custom-label')
 
 urlpatterns = [
     # path('assets/<uuid:pk>/gateways/', api.AssetGatewayListApi.as_view(), name='asset-gateway-list'),
