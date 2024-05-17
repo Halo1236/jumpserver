@@ -262,6 +262,13 @@ class Applet(JMSBaseModel):
         return account
 
     @staticmethod
+    def try_to_use_admin_account(host):
+        if host.accounts_create_amount != 0:
+            return
+        admin_account = host.accounts.filter(is_active=True, privileged=True).first()
+        return admin_account
+
+    @staticmethod
     def try_to_use_same_account(user, host):
         from accounts.models import VirtualAccount
 
@@ -281,9 +288,14 @@ class Applet(JMSBaseModel):
 
         valid_accounts = host.accounts.all().filter(is_active=True, privileged=False)
         account = self.try_to_use_same_account(user, host)
+
         if not account:
-            logger.debug('No same account, try to use private account')
-            account = self.try_to_use_private_account(user, host, valid_accounts)
+            logger.debug('No private account, try to use admin account')
+            account = self.try_to_use_admin_account(host)
+
+        # if not account:
+        #     logger.debug('No same account, try to use private account')
+        #     account = self.try_to_use_private_account(user, host, valid_accounts)
 
         if not account:
             logger.debug('No private account, try to use public account')
