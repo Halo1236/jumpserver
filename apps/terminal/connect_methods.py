@@ -34,6 +34,7 @@ class NativeClient(TextChoices):
     db_client = 'db_client', _('DB Client')
     # Razor
     mstsc = 'mstsc', _('Remote Desktop')
+    rdp_guide = 'rdp_guide', _('RDP Guide')
 
     @classmethod
     def get_native_clients(cls):
@@ -100,7 +101,9 @@ class AppletMethod:
         from .models import Applet, AppletHost
 
         methods = defaultdict(list)
-        has_applet_hosts = AppletHost.objects.all().exists()
+        has_applet_hosts = AppletHost.objects.filter(is_active=True).exists()
+        if not has_applet_hosts:
+            return methods
         applets = Applet.objects.filter(is_active=True)
         for applet in applets:
             for protocol in applet.protocols:
@@ -109,7 +112,7 @@ class AppletMethod:
                     'label': applet.display_name,
                     'type': 'applet',
                     'icon': applet.icon,
-                    'disabled': not applet.is_active or not has_applet_hosts,
+                    'disabled': not applet.is_active,
                 })
         return methods
 
@@ -165,7 +168,8 @@ class ConnectMethodUtil:
                 'support': [
                     Protocol.mysql, Protocol.postgresql,
                     Protocol.oracle, Protocol.sqlserver,
-                    Protocol.mariadb, Protocol.db2
+                    Protocol.mariadb, Protocol.db2,
+                    Protocol.dameng
                 ],
                 'match': 'm2m'
             },
@@ -252,8 +256,9 @@ class ConnectMethodUtil:
     def _filter_disable_protocols_connect_methods(cls, methods):
         # 过滤一些特殊的协议方式
         if not getattr(settings, 'TERMINAL_KOKO_SSH_ENABLED'):
-            protocol = Protocol.ssh
-            methods[protocol] = [m for m in methods[protocol] if m['type'] != 'native']
+            disable_ssh_client_protocols = [Protocol.ssh, Protocol.sftp, Protocol.telnet]
+            for protocol in disable_ssh_client_protocols:
+                methods[protocol] = [m for m in methods[protocol] if m['type'] != 'native']
         return methods
 
     @classmethod

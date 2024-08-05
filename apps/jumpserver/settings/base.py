@@ -38,7 +38,8 @@ BASE_DIR = const.BASE_DIR
 PROJECT_DIR = const.PROJECT_DIR
 APPS_DIR = os.path.join(PROJECT_DIR, 'apps')
 DATA_DIR = os.path.join(PROJECT_DIR, 'data')
-ANSIBLE_DIR = os.path.join(DATA_DIR, 'ansible')
+SHARE_DIR = os.path.join(DATA_DIR, 'share')
+ANSIBLE_DIR = os.path.join(SHARE_DIR, 'ansible')
 CERTS_DIR = os.path.join(DATA_DIR, 'certs')
 
 # Quick-start development settings - unsuitable for production
@@ -137,7 +138,6 @@ INSTALLED_APPS = [
     'rbac.apps.RBACConfig',
     'labels.apps.LabelsConfig',
     'rest_framework',
-    'rest_framework_swagger',
     'drf_yasg',
     'django_cas_ng',
     'channels',
@@ -319,6 +319,7 @@ PRIVATE_STORAGE_AUTH_FUNCTION = 'jumpserver.rewriting.storage.permissions.allow_
 PRIVATE_STORAGE_INTERNAL_URL = '/private-media/'
 PRIVATE_STORAGE_SERVER = 'jumpserver.rewriting.storage.servers.StaticFileServer'
 
+FILE_UPLOAD_TEMP_DIR = CONFIG.FILE_UPLOAD_TEMP_DIR
 
 # Use django-bootstrap-form to format template, input max width arg
 # BOOTSTRAP_COLUMN_COUNT = 11

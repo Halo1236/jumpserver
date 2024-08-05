@@ -257,6 +257,8 @@ class UserLoginLog(models.Model):
 
 
 class UserSession(models.Model):
+    _OPERATE_LOG_ACTION = {'delete': ActionChoices.finished}
+
     id = models.UUIDField(default=uuid.uuid4, primary_key=True)
     ip = models.GenericIPAddressField(verbose_name=_("Login IP"))
     key = models.CharField(max_length=128, verbose_name=_("Session key"))
@@ -288,16 +290,9 @@ class UserSession(models.Model):
         ttl = caches[settings.SESSION_CACHE_ALIAS].ttl(cache_key)
         return timezone.now() + timedelta(seconds=ttl)
 
-    @staticmethod
-    def get_keys():
-        session_store_cls = import_module(settings.SESSION_ENGINE).SessionStore
-        cache_key_prefix = session_store_cls.cache_key_prefix
-        keys = caches[settings.SESSION_CACHE_ALIAS].iter_keys('*')
-        return [k.replace(cache_key_prefix, '') for k in keys]
-
     @classmethod
     def clear_expired_sessions(cls):
-        keys = cls.get_keys()
+        keys = user_session_manager.get_keys()
         cls.objects.exclude(key__in=keys).delete()
 
     class Meta:

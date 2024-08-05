@@ -277,6 +277,7 @@ class Config(dict):
         'AUTH_LDAP_START_TLS': False,
         'AUTH_LDAP_USER_ATTR_MAP': {"username": "cn", "name": "sn", "email": "mail"},
         'AUTH_LDAP_CONNECT_TIMEOUT': 10,
+        'AUTH_LDAP_CACHE_TIMEOUT': 3600 * 24 * 30,
         'AUTH_LDAP_SEARCH_PAGED_SIZE': 1000,
         'AUTH_LDAP_SYNC_IS_PERIODIC': False,
         'AUTH_LDAP_SYNC_INTERVAL': None,
@@ -407,7 +408,11 @@ class Config(dict):
         'AUTH_FEISHU': False,
         'FEISHU_APP_ID': '',
         'FEISHU_APP_SECRET': '',
-        'FEISHU_VERSION': 'feishu',
+
+        # Lark
+        'AUTH_LARK': False,
+        'LARK_APP_ID': '',
+        'LARK_APP_SECRET': '',
 
         # Slack
         'AUTH_SLACK': False,
@@ -484,7 +489,7 @@ class Config(dict):
         # 安全配置
         'SECURITY_MFA_AUTH': 0,  # 0 不开启 1 全局开启 2 管理员开启
         'SECURITY_MFA_AUTH_ENABLED_FOR_THIRD_PARTY': True,
-        'SECURITY_COMMAND_EXECUTION': True,
+        'SECURITY_COMMAND_EXECUTION': False,
         'SECURITY_COMMAND_BLACKLIST': [
             'reboot', 'shutdown', 'poweroff', 'halt', 'dd', 'half', 'top'
         ],
@@ -609,7 +614,15 @@ class Config(dict):
 
         'FILE_UPLOAD_SIZE_LIMIT_MB': 200,
 
-        'TICKET_APPLY_ASSET_SCOPE': 'all'
+        'TICKET_APPLY_ASSET_SCOPE': 'all',
+
+        # Ansible Receptor
+        'RECEPTOR_ENABLED': False,
+        'ANSIBLE_RECEPTOR_GATEWAY_PROXY_HOST': 'jms_celery',
+        'ANSIBLE_RECEPTOR_TCP_LISTEN_ADDRESS': 'receptor:7521',
+
+        'FILE_UPLOAD_TEMP_DIR': None
+
     }
 
     old_config_map = {
