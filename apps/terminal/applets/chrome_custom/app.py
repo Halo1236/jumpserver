@@ -3,10 +3,12 @@ import re
 import shutil
 import winreg
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 from pywinauto import Application
 
+from chrome_custom.code_dialog import wrapper_progress_bar
 from common import wait_pid, BaseApplication
 
 _mode = 'safe'
@@ -60,10 +62,31 @@ class AppletApplication(BaseApplication):
         self.host = addrs[0] + user_token_param
         self.allow_address = addrs
 
+    def copy_file(self, src_file, dest_file):
+        try:
+            shutil.copy2(src_file, dest_file)
+        except Exception as e:
+            print(f"Error copying {src_file} to {dest_file}: {e}")
+
+    def copy_directory(self, src, dest, max_workers=4):
+        if not os.path.exists(src):
+            print(f"Source directory '{src}' does not exist.")
+            return
+        os.makedirs(dest, exist_ok=True)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for root, dirs, files in os.walk(src):
+                dest_root = os.path.join(dest, os.path.relpath(root, src))
+                os.makedirs(dest_root, exist_ok=True)
+                for file in files:
+                    src_file = os.path.join(root, file)
+                    dest_file = os.path.join(dest_root, file)
+                    executor.submit(self.copy_file, src_file, dest_file)
+        print(f"Directory '{src}' copied to '{dest}' successfully.")
+
     def _get_exec_params(self):
         if not os.path.exists(self._tmp_user_dir.name):
             if self.default_user_data_dir:
-                shutil.copytree(self.default_user_data_dir, self._tmp_user_dir.name)
+                self.copy_directory(self.default_user_data_dir, self._tmp_user_dir.name)
         return f'{self.host} {self.params} --user-data-dir={self._tmp_user_dir.name}'
 
     def edit_regedit(self):
@@ -78,6 +101,8 @@ class AppletApplication(BaseApplication):
             winreg.SetValueEx(key, 'PromptForDownloadLocation', 0, winreg.REG_DWORD, 0)
             winreg.SetValueEx(key, 'DefaultPopupsSetting', 0, winreg.REG_DWORD, 1)
             winreg.SetValueEx(key, 'AllowFileSelectionDialogs', 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, 'BrowserSignin', 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, 'PromotionalTabsEnabled', 0, winreg.REG_DWORD, 0)
 
             key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'Software\Policies\Google\Chrome\URLAllowlist')
             for i, adr in enumerate(self.allow_address):
@@ -91,11 +116,11 @@ class AppletApplication(BaseApplication):
             winreg.SetValueEx(key, '6', 0, winreg.REG_SZ, 'chrome://downloads')
             winreg.SetValueEx(key, '7', 0, winreg.REG_SZ, 'chrome://bookmarks')
             winreg.SetValueEx(key, '8', 0, winreg.REG_SZ, 'chrome://settings/importData')
-            if self.default_url_block != 'disable':
+            if self.default_url_block == 'enable':
                 winreg.SetValueEx(key, '4', 0, winreg.REG_SZ, 'https://*')
                 winreg.SetValueEx(key, '5', 0, winreg.REG_SZ, 'http://*')
 
-            if self.mode != 'dev':
+            if self.mode == 'safe':
                 winreg.SetValueEx(key, '9', 0, winreg.REG_SZ, 'devtools://*')
         except Exception as err:
             print('edit_regedit error: %s' % err)
@@ -109,6 +134,7 @@ class AppletApplication(BaseApplication):
         except Exception as err:
             print('cleanup error: %s' % err)
 
+    @wrapper_progress_bar
     def run(self):
         self.edit_regedit()
         app = Application(backend='uia')

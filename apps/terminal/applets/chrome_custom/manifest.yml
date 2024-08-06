@@ -1,6 +1,6 @@
 name: chrome_custom
 display_name: "{{ 'Chrome Browser Custom' | trans }}"
-version: 0.1.8
+version: 0.2.0
 comment: "{{ 'Chrome Browser Open URL Page Address' | trans }}"
 author: Halo
 exec_type: python
