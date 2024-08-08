@@ -191,6 +191,15 @@ class SecuritySessionSerializer(serializers.Serializer):
         required=True, label=_('Enable watermark'),
         help_text=_('Enabled, the web session and replay contains watermark information')
     )
+    SECURITY_WATERMARK_DATE = serializers.BooleanField(
+        required=False, default=False, label='时间水印'
+    )
+    SECURITY_WATERMARK_ALPHA = serializers.FloatField(
+        min_value=0, max_value=1, required=False, label='水印深度'
+    )
+    SECURITY_WATERMARK_CONTENT = serializers.CharField(
+        required=False, allow_blank=True, max_length=1024, label="自定义水印内容"
+    )
     SECURITY_MAX_IDLE_TIME = serializers.IntegerField(
         min_value=1, max_value=99999, required=False,
         label=_('Connection max idle time (minute)'),

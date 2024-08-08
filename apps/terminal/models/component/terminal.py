@@ -143,6 +143,9 @@ class Terminal(StorageMixin, TerminalStatusMixin, JMSBaseModel):
             'SECURITY_SESSION_SHARE': settings.SECURITY_SESSION_SHARE,
             'FTP_FILE_MAX_STORE': settings.FTP_FILE_MAX_STORE,
             'SECURITY_MAX_SESSION_TIME': settings.SECURITY_MAX_SESSION_TIME,
+            'SECURITY_WATERMARK_CONTENT': settings.SECURITY_WATERMARK_CONTENT,
+            'SECURITY_WATERMARK_ALPHA': settings.SECURITY_WATERMARK_ALPHA,
+            'SECURITY_WATERMARK_DATE': settings.SECURITY_WATERMARK_DATE
         })
         return configs
 
