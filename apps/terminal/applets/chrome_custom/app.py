@@ -93,7 +93,7 @@ class AppletApplication(BaseApplication):
         self.cleanup_regedit()
         try:
             key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, r'Software\Policies\Google\Chrome')
-            if self.mode != 'dev':
+            if self.mode == 'safe':
                 winreg.SetValueEx(key, 'DeveloperToolsAvailability', 0, winreg.REG_DWORD, 2)
             winreg.SetValueEx(key, 'PasswordManagerEnabled', 0, winreg.REG_DWORD, 0)
             winreg.SetValueEx(key, 'PrintingEnabled', 0, winreg.REG_DWORD, 0)
@@ -115,7 +115,9 @@ class AppletApplication(BaseApplication):
 
             winreg.SetValueEx(key, '6', 0, winreg.REG_SZ, 'chrome://downloads')
             winreg.SetValueEx(key, '7', 0, winreg.REG_SZ, 'chrome://bookmarks')
-            winreg.SetValueEx(key, '8', 0, winreg.REG_SZ, 'chrome://settings/importData')
+            winreg.SetValueEx(key, '8', 0, winreg.REG_SZ, 'chrome://settings')
+            # chrome 版本99 以上生效
+            winreg.SetValueEx(key, '9', 0, winreg.REG_SZ, 'view-source:*')
             if self.default_url_block == 'enable':
                 winreg.SetValueEx(key, '4', 0, winreg.REG_SZ, 'https://*')
                 winreg.SetValueEx(key, '5', 0, winreg.REG_SZ, 'http://*')
