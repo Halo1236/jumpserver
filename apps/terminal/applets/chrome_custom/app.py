@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from pywinauto import Application
 
-from chrome_custom.code_dialog import wrapper_progress_bar
+from code_dialog import wrapper_progress_bar
 from common import wait_pid, BaseApplication
 
 _mode = 'safe'
