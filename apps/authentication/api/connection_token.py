@@ -358,6 +358,7 @@ class ConnectionTokenViewSet(ExtraActionApiMixin, RootOrgViewMixin, JMSModelView
         self.input_username = self.get_input_username(data)
         _data = self._validate(user, asset, account_name, protocol)
         data.update(_data)
+        data.update
         return serializer
 
     def validate_exchange_token(self, token):
@@ -518,7 +519,7 @@ class SuperConnectionTokenViewSet(ConnectionTokenViewSet):
         if asset_type in ['k8s', 'kubernetes']:
             expire_now = False
 
-        if token.is_reusable and settings.CONNECTION_TOKEN_REUSABLE:
+        if settings.CONNECTION_TOKEN_REUSABLE:
             logger.debug('Token is reusable, not expire now')
         elif is_false(expire_now):
             logger.debug('Api specified, now expire now')
