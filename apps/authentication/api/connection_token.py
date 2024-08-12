@@ -358,7 +358,6 @@ class ConnectionTokenViewSet(ExtraActionApiMixin, RootOrgViewMixin, JMSModelView
         self.input_username = self.get_input_username(data)
         _data = self._validate(user, asset, account_name, protocol)
         data.update(_data)
-        data.update
         return serializer
 
     def validate_exchange_token(self, token):
