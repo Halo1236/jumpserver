@@ -1,6 +1,9 @@
 # ~*~ coding: utf-8 ~*~
 import uuid
 
+from django.conf import settings
+from django.contrib.auth import logout as auth_logout
+from django.shortcuts import redirect, reverse
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 
@@ -66,6 +69,12 @@ class UserProfileApi(generics.RetrieveUpdateAPIView):
         if not token:
             return
         return token.user
+
+    def get(self, *args, **kwargs):
+        if self.request.session['auth_backend'] == settings.AUTH_BACKEND_SSO:
+            guard_url = reverse('authentication:logout')
+            return redirect(guard_url)
+        return super().get(*args, **kwargs)
 
 
 class UserPasswordApi(generics.RetrieveUpdateAPIView):
