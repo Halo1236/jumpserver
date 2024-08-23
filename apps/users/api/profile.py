@@ -71,7 +71,8 @@ class UserProfileApi(generics.RetrieveUpdateAPIView):
         return token.user
 
     def get(self, *args, **kwargs):
-        if self.request.session.get('auth_backend', '') == settings.AUTH_BACKEND_SSO:
+        if (self.request.session.get('auth_backend', '') == settings.AUTH_BACKEND_SSO
+                and self.request.META.get('HTTP_X_JMS_LOGIN_TYPE', '') != 'T'):
             guard_url = reverse('authentication:logout')
             return redirect(guard_url)
         return super().get(*args, **kwargs)
