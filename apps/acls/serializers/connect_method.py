@@ -11,7 +11,7 @@ class ConnectMethodACLSerializer(BaseSerializer, BulkOrgResourceModelSerializer)
         model = ConnectMethodACL
         fields = [
             i for i in BaseSerializer.Meta.fields + ['connect_methods']
-            if i not in ['assets', 'accounts']
+            if i not in ['accounts',]
         ]
         action_choices_exclude = BaseSerializer.Meta.action_choices_exclude + [
             ActionChoices.review, ActionChoices.accept, ActionChoices.notice
