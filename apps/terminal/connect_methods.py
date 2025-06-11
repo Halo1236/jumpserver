@@ -229,10 +229,11 @@ class ConnectMethodUtil:
         return methods
 
     @classmethod
-    def get_user_allowed_connect_methods(cls, os, user):
+    def get_user_allowed_connect_methods(cls, os, user, asset):
         from acls.models import ConnectMethodACL
+        kwargs = {'user': user, 'asset': asset}
         methods = cls.get_filtered_protocols_connect_methods(os)
-        acls = ConnectMethodACL.get_user_acls(user)
+        acls = ConnectMethodACL.filter_queryset(**kwargs)
         disabled_connect_methods = acls.values_list('connect_methods', flat=True)
         disabled_connect_methods = set(itertools.chain.from_iterable(disabled_connect_methods))
 

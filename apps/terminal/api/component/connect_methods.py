@@ -5,6 +5,7 @@ import itertools
 from rest_framework import generics
 from rest_framework.views import Response
 
+from assets.models import Asset
 from common.permissions import IsValidUser
 from common.utils import get_request_os, is_true, distinct
 from terminal import serializers
@@ -20,12 +21,15 @@ class ConnectMethodListApi(generics.ListAPIView):
     def get_queryset(self):
         os = self.request.query_params.get('os') or get_request_os(self.request)
         flat = self.request.query_params.get('flat')
+        asset_id = self.request.query_params.get('asset_id')
+        asset = Asset.objects.filter(id=asset_id).first()
+
         if is_true(flat):
             queryset = ConnectMethodUtil.get_filtered_protocols_connect_methods(os)
             queryset = itertools.chain.from_iterable(queryset.values())
             queryset = distinct(queryset, key=lambda x: x['value'])
         else:
-            queryset = ConnectMethodUtil.get_user_allowed_connect_methods(os, self.request.user)
+            queryset = ConnectMethodUtil.get_user_allowed_connect_methods(os, self.request.user, asset)
         return queryset
 
     def list(self, request, *args, **kwargs):
