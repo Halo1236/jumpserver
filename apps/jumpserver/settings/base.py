@@ -320,6 +320,8 @@ PRIVATE_STORAGE_AUTH_FUNCTION = 'jumpserver.rewriting.storage.permissions.allow_
 PRIVATE_STORAGE_INTERNAL_URL = '/private-media/'
 PRIVATE_STORAGE_SERVER = 'jumpserver.rewriting.storage.servers.StaticFileServer'
 
+TRUSTED_CA_PUB_KEYS = exist_or_default(os.path.join(CERTS_DIR, 'ca.pub'), CONFIG.TRUSTED_CA_PUB_KEYS)
+
 FILE_UPLOAD_TEMP_DIR = CONFIG.FILE_UPLOAD_TEMP_DIR
 
 # Use django-bootstrap-form to format template, input max width arg

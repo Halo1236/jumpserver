@@ -25,6 +25,10 @@ from common.utils import (
     user_date_expired_default, get_logger, lazyproperty,
     random_string, bulk_create_with_signal
 )
+
+from common.utils.sshkey_tools.cert import SSHCertificate
+from common.utils.sshkey_tools.keys import PublicKey
+
 from labels.mixins import LabeledMixin
 from orgs.utils import current_org
 from rbac.const import Scope
@@ -184,9 +188,45 @@ class AuthMixin:
         except Exception as e:
             return ''
 
+    @staticmethod
+    def load_trusted_ca_keys(filepath: str):
+        """
+        从指定文件加载受信任的 CA 公钥
+        :param filepath: 公钥文件路径，每行一个 CA 公钥
+        :return: 公钥字符串列表
+        """
+        with open(filepath, 'r') as f:
+            keys = [line.strip() for line in f if line.strip()]
+        return keys
+
     def check_public_key(self, key):
+        # 先尝试解析为 SSH 证书
+        if "-cert" in key:
+            ca_keys = self.load_trusted_ca_keys(settings.TRUSTED_CA_PUB_KEYS)
+            cert = SSHCertificate.from_string(key)
+            # 遍历受信 CA，验证签名
+            valid = False
+            for ca_pub_str in ca_keys:
+                ca_pub = PublicKey.from_string(ca_pub_str)
+                if cert.verify(ca_pub, raise_on_error=False):
+                    valid = True
+                    break
+            if not valid:
+                logger.error("证书签名无效或不受信")
+                return False
+            # 检查 principal 与有效期
+            # if self.username not in cert.fields.principals:
+            #     logger.error("principal 不匹配")
+            #     return False
+            # now = timezone.now()
+            # if cert.fields.valid_after > now or cert.fields.valid_before < now:
+            #     logger.error('证书不在有效期')
+            #     return False
+            return True
+
         if not self.public_key:
             return False
+
         key_md5 = self.get_public_key_md5(key)
         if not key_md5:
             return False
