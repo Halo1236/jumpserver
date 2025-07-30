@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from struct import pack, unpack
 from typing import Tuple, Union
+from django.utils import timezone
 
 from cryptography.hazmat.primitives.asymmetric.utils import (
     decode_dss_signature,
@@ -40,8 +41,8 @@ from .utils import (
 )
 
 NoneType = type(None)
-MAX_INT32 = 2**32
-MAX_INT64 = 2**64
+MAX_INT32 = 2 ** 32
+MAX_INT64 = 2 ** 64
 NEWLINE = "\n"
 
 ECDSA_CURVE_MAP = {
@@ -436,39 +437,27 @@ class Integer64Field(CertificateField):
 class DateTimeField(Integer64Field):
     """
     Certificate field representing a datetime value.
-    The value is saved as a 64-bit integer (unix timestamp)
+    The value is saved as a 64-bit integer (unix timestamp).
+    Supports:
+        - datetime
+        - int
+        - str ("4h13m", "forever", etc.)
     """
 
     DATA_TYPE = (datetime, int, str)
-    DEFAULT = datetime.now
+    DEFAULT = staticmethod(lambda: datetime.now(timezone.utc))
 
     @classmethod
     def encode(cls, value: Union[datetime, int, str]) -> bytes:
-        """Encodes a datetime object, integer or time string to a byte string
-           Time strings are parsed with pytimeparse2, for example:
-            32m
-            2h32m
-            3d2h32m
-            1w3d2h32m
-            1w 3d 2h 32m
-            1 w 3 d 2 h 32 m
-            4:13
-            4:13:02
-            4:13:02.266
-            forever (Returns as MAX_INT64)
-
-        Args:
-            value (datetime, int, str): Datetime object
-
-        Returns:
-            bytes: Packed byte string containing datetime timestamp
-        """
+        """Encodes datetime/int/str to packed 64-bit timestamp"""
         cls.__validate_type__(value, True)
 
         if isinstance(value, str):
             value = cls.parse_string_value(value)
 
         if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
             value = int(value.timestamp())
 
         return Integer64Field.encode(value)
@@ -476,13 +465,10 @@ class DateTimeField(Integer64Field):
     @staticmethod
     def parse_string_value(value: str) -> int:
         """
-        Parses a string value into an integer timestamp
-
-        Args:
-            value (str): String value to parse
-
-        Returns:
-            int: Integer timestamp
+        Parses time strings like "3d2h32m" into future timestamps.
+        Special cases:
+            "forever" => MAX_INT64 - 1
+            "always"  => 1
         """
         if value == "forever":
             return MAX_INT64 - 1
@@ -490,20 +476,15 @@ class DateTimeField(Integer64Field):
         if value == "always":
             return 1
 
-        return int((datetime.now() + str_to_time_delta(value)).timestamp())
+        return int((datetime.now(timezone.utc) + str_to_time_delta(value)).timestamp())
 
     @staticmethod
-    def decode(data: bytes) -> datetime:
-        """Decodes a datetime object from a block of bytes
-
-        Args:
-            data (bytes): Block of bytes containing a datetime object
-
-        Returns:
-            tuple: Tuple with datetime and remainder of data
+    def decode(data: bytes) -> Tuple[datetime, bytes]:
         """
-        timestamp, data = Integer64Field.decode(data)
-        return datetime.fromtimestamp(timestamp), data
+        Decodes a 64-bit timestamp to UTC-aware datetime
+        """
+        timestamp, remaining = Integer64Field.decode(data)
+        return datetime.fromtimestamp(timestamp, tz=timezone.utc), remaining
 
     def __validate_value__(self) -> Union[bool, Exception]:
         """
@@ -519,13 +500,15 @@ class DateTimeField(Integer64Field):
             check = self.parse_string_value(check)
 
         if isinstance(check, datetime):
+            if check.tzinfo is None:
+                check = check.replace(tzinfo=timezone.utc)
             check = int(check.timestamp())
 
-        if check < MAX_INT64:
+        if isinstance(check, int) and check < MAX_INT64:
             return True
 
         return _EX.InvalidFieldDataException(
-            f"{self.get_name()} must be a 64-bit integer or datetime object"
+            f"{self.get_name()} must be a valid 64-bit timestamp or datetime"
         )
 
 
@@ -626,7 +609,7 @@ class ListField(CertificateField):
             )
 
         if hasattr(self.value, "__iter__") and not all(
-            (isinstance(val, (str, bytes)) for val in self.value)
+                (isinstance(val, (str, bytes)) for val in self.value)
         ):
             return _EX.InvalidFieldDataException(
                 "Expected list or tuple containing strings or bytes"
@@ -722,7 +705,7 @@ class KeyValueField(CertificateField):
         )
 
         if hasattr(self.value, "__iter__") and not all(
-            (isinstance(val, (str, bytes)) for val in testvals)
+                (isinstance(val, (str, bytes)) for val in testvals)
         ):
             return _EX.InvalidFieldDataException(
                 "Expected dict, list, tuple, set with string or byte keys and values"
@@ -1046,7 +1029,7 @@ class ValidAfterField(DateTimeField):
     represented by a datetime object
     """
 
-    DEFAULT = datetime.now()
+    DEFAULT = staticmethod(lambda: datetime.now(timezone.utc))
     DATA_TYPE = (datetime, int, str)
 
 
@@ -1056,7 +1039,7 @@ class ValidBeforeField(DateTimeField):
     represented by a datetime object
     """
 
-    DEFAULT = datetime.now() + timedelta(minutes=10)
+    DEFAULT = staticmethod(lambda: datetime.now(timezone.utc) + timedelta(minutes=10))
     DATA_TYPE = (datetime, int, str)
 
     def __validate_value__(self) -> Union[bool, Exception]:
@@ -1120,7 +1103,7 @@ class CriticalOptionsField(KeyValueField):
             )
 
         for elem in (
-            self.value if not isinstance(self.value, dict) else list(self.value.keys())
+                self.value if not isinstance(self.value, dict) else list(self.value.keys())
         ):
             if elem not in self.ALLOWED_VALUES:
                 return _EX.InvalidCertificateFieldException(
@@ -1377,10 +1360,10 @@ class RsaSignatureField(SignatureField):
     DATA_TYPE = bytes
 
     def __init__(
-        self,
-        private_key: RsaPrivateKey = None,
-        hash_alg: RsaAlgs = RsaAlgs.SHA512,
-        signature: bytes = None,
+            self,
+            private_key: RsaPrivateKey = None,
+            hash_alg: RsaAlgs = RsaAlgs.SHA512,
+            signature: bytes = None,
     ):
         super().__init__(private_key, signature)
         self.hash_alg = hash_alg
@@ -1509,10 +1492,10 @@ class EcdsaSignatureField(SignatureField):
     DATA_TYPE = bytes
 
     def __init__(
-        self,
-        private_key: EcdsaPrivateKey = None,
-        signature: bytes = None,
-        curve_name: str = None,
+            self,
+            private_key: EcdsaPrivateKey = None,
+            signature: bytes = None,
+            curve_name: str = None,
     ) -> None:
         super().__init__(private_key, signature)
 
@@ -1611,10 +1594,10 @@ class Ed25519SignatureField(SignatureField):
     DATA_TYPE = bytes
 
     def __init__(
-        self,
-        # trunk-ignore(gitleaks/generic-api-key)
-        private_key: Ed25519PrivateKey = None,
-        signature: bytes = None,
+            self,
+            # trunk-ignore(gitleaks/generic-api-key)
+            private_key: Ed25519PrivateKey = None,
+            signature: bytes = None,
     ) -> None:
         super().__init__(private_key, signature)
 

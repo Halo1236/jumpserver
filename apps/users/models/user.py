@@ -215,13 +215,13 @@ class AuthMixin:
                 logger.error("证书签名无效或不受信")
                 return False
             # 检查 principal 与有效期
-            # if self.username not in cert.fields.principals:
-            #     logger.error("principal 不匹配")
-            #     return False
-            # now = timezone.now()
-            # if cert.fields.valid_after > now or cert.fields.valid_before < now:
-            #     logger.error('证书不在有效期')
-            #     return False
+            if self.username not in cert.fields.principals.value:
+                logger.error("principal 不匹配")
+                return False
+            now = timezone.now()
+            if cert.fields.valid_after.value > now or cert.fields.valid_before.value < now:
+                logger.error('证书不在有效期')
+                return False
             return True
 
         if not self.public_key:
