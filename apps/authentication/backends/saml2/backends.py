@@ -29,18 +29,24 @@ class SAML2Backend(JMSModelBackend):
         logger.debug(log_prompt.format('start'))
 
         groups = saml_user_data.pop('groups', [])
-        user, created = get_user_model().objects.get_or_create(
-            username=saml_user_data['username'], defaults=saml_user_data
-        )
-        user.groups.set([])
-        for group_name in groups:
-            try:
-                group = UserGroup.objects.get(name=group_name)
-                group.users.add(user)
-            except UserGroup.DoesNotExist:
-                continue
-        logger.debug(log_prompt.format("user: {}|created: {}".format(user, created)))
-
+        email = saml_user_data.get('email', '').lower()  # 获取邮箱字段并转换为小写
+        if email.endswith('@decathlon.com'):  # 判断邮箱是否以 'decathlon.com' 结尾
+            user, created = get_user_model().objects.get_or_create(
+                username=saml_user_data['username'], defaults=saml_user_data
+            )
+            user.groups.set([])
+            for group_name in groups:
+                try:
+                    group = UserGroup.objects.get(name=group_name)
+                    group.users.add(user)
+                except UserGroup.DoesNotExist:
+                    continue
+            logger.debug(log_prompt.format("user: {}|created: {}".format(user, created)))
+        else:
+            #   非内部员工，仅创建用户，不加入组
+            user, created = get_user_model().objects.get_or_create(
+                username=saml_user_data['username'], defaults=saml_user_data
+            )
         logger.debug(log_prompt.format("Send signal => saml2 create or update user"))
         saml2_create_or_update_user.send(
             sender=self, request=request, user=user, created=created, attrs=saml_user_data
