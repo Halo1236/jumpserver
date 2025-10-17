@@ -1,20 +1,20 @@
 # ~*~ coding: utf-8 ~*~
 #
-import os
-import re
-import pyotp
 import base64
 import logging
+import os
+import re
 import time
 
+import pyotp
 from django.conf import settings
 from django.core.cache import cache
 
 from common.tasks import send_mail_async
-from common.utils import reverse, get_object_or_none, ip, pretty_string
+from common.utils import reverse, get_object_or_none, ip, safe_next_url
 from .models import User
 
-logger = logging.getLogger('jumpserver')
+logger = logging.getLogger('jumpserver.users')
 
 
 def send_user_created_mail(user):
@@ -49,6 +49,7 @@ def redirect_user_first_login_or_index(request, redirect_field_name):
     url = request.POST.get(redirect_field_name)
     if not url:
         url = request.GET.get(redirect_field_name)
+    url = safe_next_url(url, request=request)
     # 防止 next 地址为 None
     if not url or url.lower() in ['none']:
         url = reverse('index')
@@ -94,7 +95,7 @@ def check_password_rules(password, is_org_admin=False):
     if settings.SECURITY_PASSWORD_NUMBER:
         pattern += '(?=.*\d)'
     if settings.SECURITY_PASSWORD_SPECIAL_CHAR:
-        pattern += '(?=.*[`~!@#\$%\^&\*\(\)-=_\+\[\]\{\}\|;:\'\",\.<>\/\?])'
+        pattern += '(?=.*[`~!@#$%^&*()\-=_+\[\]{}|;:\'",.<>/?])'
     pattern += '[a-zA-Z\d`~!@#\$%\^&\*\(\)-=_\+\[\]\{\}\|;:\'\",\.<>\/\?]'
     if is_org_admin:
         min_length = settings.SECURITY_ADMIN_USER_PASSWORD_MIN_LENGTH
@@ -124,7 +125,7 @@ class BlockUtilBase:
     BLOCK_KEY_TMPL: str
 
     def __init__(self, username, ip):
-        self.username = username
+        username = username.lower() if username else ''
         self.ip = ip
         self.limit_key = self.LIMIT_KEY_TMPL.format(username, ip)
         self.block_key = self.BLOCK_KEY_TMPL.format(username)
@@ -226,20 +227,22 @@ class MFABlockUtils(BlockUtilBase):
 
 class LoginIpBlockUtil(BlockGlobalIpUtilBase):
     LIMIT_KEY_TMPL = "_LOGIN_LIMIT_{}"
-    BLOCK_KEY_TMPL = "_LOGIN_BLOCK_{}"
+    BLOCK_KEY_TMPL = "_LOGIN_BLOCK_IP_{}"
+
+
+def validate_emails(emails):
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    for e in emails:
+        e = e or ''
+        if re.match(pattern, e):
+            return e
 
 
 def construct_user_email(username, email, email_suffix=''):
-    if email is None:
-        email = ''
-    if '@' in email:
-        return email
-    if '@' in username:
-        return username
-    if not email_suffix:
-        email_suffix = settings.EMAIL_SUFFIX
-    email = f'{username}@{email_suffix}'
-    return email
+    default = f'{username}@{email_suffix or settings.EMAIL_SUFFIX}'
+    emails = [email, username]
+    email = validate_emails(emails)
+    return email or default
 
 
 def get_current_org_members():

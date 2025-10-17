@@ -4,17 +4,19 @@ import json
 from typing import Callable
 
 from django.db import models
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.db.models.fields import related
 from django.db.utils import IntegrityError
 from django.forms import model_to_dict
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
+from accounts.const import AliasAccount
 from common.db.encoder import ModelJSONFieldEncoder
 from common.db.models import JMSBaseModel
 from common.exceptions import JMSException
+from common.utils import reverse, get_logger
+from common.utils.lock import DistributedLock
 from common.utils.timezone import as_current_tz
-from common.utils import reverse
 from orgs.models import Organization
 from orgs.utils import tmp_to_org
 from tickets.const import (
@@ -24,6 +26,8 @@ from tickets.const import (
 from tickets.errors import AlreadyClosed
 from tickets.handlers import get_ticket_handler
 from ..flow import TicketFlow
+
+logger = get_logger(__file__)
 
 __all__ = [
     'Ticket', 'TicketStep', 'TicketAssignee',
@@ -57,7 +61,7 @@ class TicketStep(JMSBaseModel):
             assignees.update(state=state)
         self.status = StepStatus.closed
         self.state = state
-        self.save(update_fields=['state', 'status'])
+        self.save(update_fields=['state', 'status', 'date_updated'])
 
     def set_active(self):
         self.status = StepStatus.active
@@ -143,16 +147,13 @@ class StatusMixin:
     def reject(self, processor):
         self._change_state(StepState.rejected, processor)
 
-    def reopen(self):
-        self._change_state_by_applicant(TicketState.reopen)
-
     def close(self):
         self._change_state(TicketState.closed, self.applicant)
 
     def _change_state_by_applicant(self, state):
         if state == TicketState.closed:
             self.status = TicketStatus.closed
-        elif state in [TicketState.reopen, TicketState.pending]:
+        elif state == TicketState.pending:
             self.status = TicketStatus.open
         else:
             raise ValueError("Not supported state: {}".format(state))
@@ -296,7 +297,7 @@ class Ticket(StatusMixin, JMSBaseModel):
     )
     comment = models.TextField(default='', blank=True, verbose_name=_('Comment'))
     rel_snapshot = models.JSONField(verbose_name=_('Relation snapshot'), default=dict)
-    serial_num = models.CharField(_('Serial number'), max_length=128, unique=True, null=True)
+    serial_num = models.CharField(_('Serial number'), max_length=128, null=True)
     meta = models.JSONField(encoder=ModelJSONFieldEncoder, default=dict, verbose_name=_("Meta"))
     org_id = models.CharField(
         max_length=36, blank=True, default='', verbose_name=_('Organization'), db_index=True
@@ -305,6 +306,9 @@ class Ticket(StatusMixin, JMSBaseModel):
     class Meta:
         ordering = ('-date_created',)
         verbose_name = _('Ticket')
+        unique_together = (
+            ('serial_num',),
+        )
 
     def __str__(self):
         return '{}({})'.format(self.title, self.applicant)
@@ -326,7 +330,13 @@ class Ticket(StatusMixin, JMSBaseModel):
     @classmethod
     def get_user_related_tickets(cls, user):
         queries = Q(applicant=user) | Q(ticket_steps__ticket_assignees__assignee=user)
-        tickets = cls.objects.filter(queries).distinct()
+        # TODO: 与 StatusMixin.process_map 内连表查询有部分重叠 有优化空间 待验证排除是否不影响其它调用
+        prefetch_ticket_assignee = Prefetch('ticket_steps__ticket_assignees',
+                                            queryset=TicketAssignee.objects.select_related('assignee'), )
+        tickets = cls.objects.prefetch_related(prefetch_ticket_assignee) \
+            .select_related('applicant') \
+            .filter(queries) \
+            .distinct()
         return tickets
 
     def get_current_ticket_flow_approve(self):
@@ -367,30 +377,33 @@ class Ticket(StatusMixin, JMSBaseModel):
         date_created = as_current_tz(self.date_created)
         date_prefix = date_created.strftime('%Y%m%d')
 
-        ticket = Ticket.objects.all().select_for_update().filter(
+        ticket = Ticket.objects.filter(
             serial_num__startswith=date_prefix
-        ).order_by('-date_created').first()
+        ).order_by('-serial_num').first()
 
         last_num = 0
         if ticket:
             last_num = ticket.serial_num[8:]
             last_num = int(last_num)
         num = '%04d' % (last_num + 1)
-        return '{}{}'.format(date_prefix, num)
+        return f'{date_prefix}{num}'
 
     def set_serial_num(self):
         if self.serial_num:
             return
 
-        try:
-            self.serial_num = self.get_next_serial_num()
-            self.save(update_fields=('serial_num',))
-        except IntegrityError as e:
-            if e.args[0] == 1062:
-                # 虽然做了 `select_for_update` 但是每天的第一条工单仍可能造成冲突
-                # 但概率小，这里只报错，用户重新提交即可
-                raise JMSException(detail=_('Please try again'), code='please_try_again')
-            raise e
+        lock_key = 'TICKET_LOCK_SET_SERIAL_NUM'
+        with DistributedLock(lock_key):
+            try:
+                self.serial_num = self.get_next_serial_num()
+                self.save(update_fields=('serial_num',))
+            except IntegrityError as e:
+                logger.error(f'Set ticket serial number error: {e}')
+                if e.args[0] == 1062:
+                    # 虽然做了 `select_for_update` 但是每天的第一条工单仍可能造成冲突
+                    # 但概率小，这里只报错，用户重新提交即可
+                    raise JMSException(detail=_('Please try again'), code='please_try_again')
+                raise e
 
     def get_field_display(self, name, field, data: dict):
         value = data.get(name)
@@ -403,6 +416,16 @@ class Ticket(StatusMixin, JMSBaseModel):
                 value = self.rel_snapshot[name]
             elif isinstance(self.rel_snapshot[name], list):
                 value = ','.join(self.rel_snapshot[name])
+        elif name == 'apply_accounts':
+            new_values = []
+            for account in value:
+                alias = dict(AliasAccount.choices).get(account)
+                new_value = alias if alias else account
+                new_values.append(str(new_value))
+            value = ', '.join(new_values)
+        elif name == 'org_id':
+            org = Organization.get_instance(value)
+            value = org.name if org else ''
         elif isinstance(value, list):
             value = ', '.join(value)
         return value

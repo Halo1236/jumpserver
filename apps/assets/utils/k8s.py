@@ -4,7 +4,6 @@ from urllib.parse import urlencode, urlparse
 from kubernetes import client
 from kubernetes.client import api_client
 from kubernetes.client.api import core_v1_api
-from kubernetes.client.exceptions import ApiException
 from sshtunnel import SSHTunnelForwarder, BaseSSHTunnelForwarderError
 
 from common.utils import get_logger
@@ -22,7 +21,12 @@ class KubernetesClient:
     @property
     def api(self):
         configuration = client.Configuration()
-        configuration.host = self.url
+        scheme = urlparse(self.url).scheme
+        if not self.server:
+            host = self.url
+        else:
+            host = f'{scheme}://127.0.0.1:{self.server.local_bind_port}'
+        configuration.host = host
         configuration.verify_ssl = False
         configuration.api_key = {"authorization": "Bearer " + self.token}
         c = api_client.ApiClient(configuration=configuration)
@@ -61,7 +65,7 @@ class KubernetesClient:
 
         remote_bind_address = (
             urlparse(asset.address).hostname,
-            urlparse(asset.address).port
+            urlparse(asset.address).port or 443
         )
         server = SSHTunnelForwarder(
             (gateway.address, gateway.port),
@@ -83,8 +87,8 @@ class KubernetesClient:
         if hasattr(self, func_name):
             try:
                 data = getattr(self, func_name)(*args)
-            except ApiException as e:
-                logger.error(e.reason)
+            except Exception as e:
+                logger.error(f'K8S tree get {tp} error: {e}')
 
         if self.server:
             self.server.stop()
@@ -100,7 +104,7 @@ class KubernetesTree:
         i = str(self.asset.id)
         name = str(self.asset)
         node = self.create_tree_node(
-            i, i, name, 'asset', is_open=True,
+            i, i, name, 'asset', icon='k8s', is_open=True,
         )
         return node
 

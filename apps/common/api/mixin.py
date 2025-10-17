@@ -1,18 +1,29 @@
 # -*- coding: utf-8 -*-
 #
 from collections import defaultdict
+from itertools import chain
 from typing import Callable
 
+from django.db import models
 from django.db.models.signals import m2m_changed
+from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.settings import api_settings
 
+from common.drf.filters import (
+    IDSpmFilterBackend, CustomFilterBackend, IDInFilterBackend,
+    IDNotFilterBackend, NotOrRelFilterBackend, LabelFilterBackend
+)
+from common.utils import get_logger, lazyproperty
 from .action import RenderToJsonMixin
-from .filter import ExtraFilterFieldsMixin, OrderingFielderFieldsMixin
 from .serializer import SerializerMixin
 
 __all__ = [
     'CommonApiMixin', 'PaginatedResponseMixin', 'RelationMixin',
+    'ExtraFilterFieldsMixin'
 ]
+
+logger = get_logger(__name__)
 
 
 class PaginatedResponseMixin:
@@ -79,6 +90,7 @@ class RelationMixin:
 
 class QuerySetMixin:
     action: str
+    request: Request
     get_serializer_class: Callable
     get_queryset: Callable
 
@@ -88,13 +100,126 @@ class QuerySetMixin:
             return queryset
         if self.action == 'metadata':
             queryset = queryset.none()
-        if self.action in ['list', 'metadata']:
-            serializer_class = self.get_serializer_class()
-            if serializer_class and hasattr(serializer_class, 'setup_eager_loading'):
-                queryset = serializer_class.setup_eager_loading(queryset)
+        queryset = self.setup_eager_loading(queryset)
+        return queryset
+
+    # Todo: 未来考虑自定义 pagination
+    def setup_eager_loading(self, queryset):
+        if self.request.query_params.get('format') not in ['csv', 'xlsx']:
+            return queryset
+        serializer_class = self.get_serializer_class()
+        if not serializer_class or not hasattr(serializer_class, 'setup_eager_loading'):
+            return queryset
+        return serializer_class.setup_eager_loading(queryset)
+
+    def paginate_queryset(self, queryset):
+        page = super().paginate_queryset(queryset)
+        serializer_class = self.get_serializer_class()
+        if page and serializer_class and hasattr(serializer_class, 'setup_eager_loading'):
+            ids = [str(obj.id) for obj in page]
+            page = self.get_queryset().filter(id__in=ids)
+            page = serializer_class.setup_eager_loading(page)
+            page_mapper = {str(obj.id): obj for obj in page}
+            page = [page_mapper.get(_id) for _id in ids if _id in page_mapper]
+        return page
+
+
+class ExtraFilterFieldsMixin:
+    """
+    额外的 api filter
+    """
+    default_added_filters = (
+        CustomFilterBackend, IDSpmFilterBackend, IDInFilterBackend,
+        IDNotFilterBackend, LabelFilterBackend
+    )
+    filter_backends = api_settings.DEFAULT_FILTER_BACKENDS
+    extra_filter_fields = []
+    extra_filter_backends = []
+
+    def set_compatible_fields(self):
+        """
+        兼容老的 filter_fields
+        """
+        if not hasattr(self, 'filter_fields') and hasattr(self, 'filterset_fields'):
+            self.filter_fields = self.filterset_fields
+
+    def get_filter_backends(self):
+        self.set_compatible_fields()
+        if self.filter_backends != self.__class__.filter_backends:
+            return self.filter_backends
+        backends = list(chain(
+            self.filter_backends,
+            self.default_added_filters,
+            self.extra_filter_backends,
+        ))
+        # 这个要放在最后
+        backends.append(NotOrRelFilterBackend)
+        return backends
+
+    def filter_queryset(self, queryset):
+        for backend in self.get_filter_backends():
+            queryset = backend().filter_queryset(self.request, queryset, self)
         return queryset
 
 
-class CommonApiMixin(SerializerMixin, ExtraFilterFieldsMixin, OrderingFielderFieldsMixin,
-                     QuerySetMixin, RenderToJsonMixin, PaginatedResponseMixin):
-    pass
+class OrderingFielderFieldsMixin:
+    """
+    额外的 api ordering
+    """
+    ordering_fields = None
+    extra_ordering_fields = []
+
+    @lazyproperty
+    def ordering_fields(self):
+        return self._get_ordering_fields()
+
+    def _get_ordering_fields(self):
+        if isinstance(self.__class__.ordering_fields, (list, tuple)):
+            return self.__class__.ordering_fields
+
+        try:
+            valid_fields = self.get_valid_ordering_fields()
+        except Exception as e:
+            logger.debug('get_valid_ordering_fields error: %s, pass' % e)
+            # 这里千万不要这么用，会让 logging 重复，至于为什么，我也不知道
+            # logging.debug('get_valid_ordering_fields error: %s' % e)
+            valid_fields = []
+
+        fields = list(chain(
+            valid_fields,
+            self.extra_ordering_fields
+        ))
+        return fields
+
+    def get_valid_ordering_fields(self):
+        if getattr(self, 'model', None):
+            model = self.model
+        elif getattr(self, 'queryset', None):
+            model = self.queryset.model
+        else:
+            queryset = self.get_queryset()
+            model = None if isinstance(queryset, list) else queryset.model
+
+        if not model:
+            return []
+
+        excludes_fields = (
+            models.UUIDField, models.Model, models.ForeignKey,
+            models.FileField, models.JSONField, models.ManyToManyField,
+            models.DurationField,
+        )
+        valid_fields = []
+        for field in model._meta.fields:
+            if isinstance(field, excludes_fields):
+                continue
+            valid_fields.append(field.name)
+        return valid_fields
+
+
+class CommonApiMixin(
+    SerializerMixin, ExtraFilterFieldsMixin, OrderingFielderFieldsMixin,
+    QuerySetMixin, RenderToJsonMixin, PaginatedResponseMixin
+):
+    def is_swagger_request(self):
+        return getattr(self, 'swagger_fake_view', False) or \
+            getattr(self, 'raw_action', '') == 'metadata'

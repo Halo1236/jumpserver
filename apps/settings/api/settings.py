@@ -1,8 +1,15 @@
 # -*- coding: utf-8 -*-
 #
+import re
 
 from django.conf import settings
+from django.core.cache import cache
+from django.http import HttpResponse
+from django.views.static import serve
 from rest_framework import generics
+from rest_framework import status
+from rest_framework.permissions import AllowAny
+from rest_framework.views import APIView
 
 from common.utils import get_logger
 from jumpserver.conf import Config
@@ -10,6 +17,7 @@ from rbac.permissions import RBACPermission
 from .. import serializers
 from ..models import Setting
 from ..signals import category_setting_updated
+from ..utils import get_interface_setting_or_default
 
 logger = get_logger(__file__)
 
@@ -22,20 +30,27 @@ class SettingsApi(generics.RetrieveUpdateAPIView):
         'basic': serializers.BasicSettingSerializer,
         'terminal': serializers.TerminalSettingSerializer,
         'security': serializers.SecuritySettingSerializer,
+        'security_auth': serializers.SecurityAuthSerializer,
+        'security_basic': serializers.SecurityBasicSerializer,
+        'security_session': serializers.SecuritySessionSerializer,
+        'security_password': serializers.SecurityPasswordRuleSerializer,
+        'security_login_limit': serializers.SecurityLoginLimitSerializer,
         'ldap': serializers.LDAPSettingSerializer,
         'email': serializers.EmailSettingSerializer,
         'email_content': serializers.EmailContentSettingSerializer,
         'wecom': serializers.WeComSettingSerializer,
         'dingtalk': serializers.DingTalkSettingSerializer,
         'feishu': serializers.FeiShuSettingSerializer,
+        'lark': serializers.LarkSettingSerializer,
+        'slack': serializers.SlackSettingSerializer,
         'auth': serializers.AuthSettingSerializer,
         'oidc': serializers.OIDCSettingSerializer,
         'keycloak': serializers.KeycloakSettingSerializer,
         'radius': serializers.RadiusSettingSerializer,
         'cas': serializers.CASSettingSerializer,
-        'sso': serializers.SSOSettingSerializer,
         'saml2': serializers.SAML2SettingSerializer,
         'oauth2': serializers.OAuth2SettingSerializer,
+        'passkey': serializers.PasskeySettingSerializer,
         'clean': serializers.CleaningSerializer,
         'other': serializers.OtherSettingSerializer,
         'sms': serializers.SMSSettingSerializer,
@@ -43,12 +58,28 @@ class SettingsApi(generics.RetrieveUpdateAPIView):
         'tencent': serializers.TencentSMSSettingSerializer,
         'huawei': serializers.HuaweiSMSSettingSerializer,
         'cmpp2': serializers.CMPP2SMSSettingSerializer,
+        'custom': serializers.CustomSMSSettingSerializer,
+        'vault': serializers.VaultSettingSerializer,
+        'chat': serializers.ChatAISettingSerializer,
+        'announcement': serializers.AnnouncementSettingSerializer,
+        'ticket': serializers.TicketSettingSerializer,
+        'ops': serializers.OpsSettingSerializer,
+        'virtualapp': serializers.VirtualAppSerializer,
     }
 
     rbac_category_permissions = {
         'basic': 'settings.view_setting',
         'terminal': 'settings.change_terminal',
+        'ops': 'settings.change_ops',
+        'ticket': 'settings.change_ticket',
+        'virtualapp': 'settings.change_virtualapp',
+        'announcement': 'settings.change_announcement',
         'security': 'settings.change_security',
+        'security_basic': 'settings.change_security',
+        'security_auth': 'settings.change_security',
+        'security_session': 'settings.change_security',
+        'security_password': 'settings.change_security',
+        'security_login_limit': 'settings.change_security',
         'ldap': 'settings.change_auth',
         'email': 'settings.change_email',
         'email_content': 'settings.change_email',
@@ -68,6 +99,7 @@ class SettingsApi(generics.RetrieveUpdateAPIView):
         'sms': 'settings.change_sms',
         'alibaba': 'settings.change_sms',
         'tencent': 'settings.change_sms',
+        'vault': 'settings.change_vault',
     }
 
     def get_queryset(self):
@@ -138,3 +170,32 @@ class SettingsApi(generics.RetrieveUpdateAPIView):
         if hasattr(serializer, 'post_save'):
             serializer.post_save()
         self.send_signal(serializer)
+        if self.request.query_params.get('category') == 'ldap':
+            self.clean_ldap_user_dn_cache()
+
+    @staticmethod
+    def clean_ldap_user_dn_cache():
+        del_count = cache.delete_pattern('django_auth_ldap.user_dn.*')
+        logger.debug(f'clear LDAP user_dn_cache count={del_count}')
+
+
+class SettingsLogoApi(APIView):
+    permission_classes = (AllowAny,)
+
+    def get(self, request, *args, **kwargs):
+        size = request.GET.get('size', 'small')
+        interface_data = get_interface_setting_or_default()
+        if size == 'small':
+            logo_path = interface_data['logo_logout']
+        else:
+            logo_path = interface_data['logo_index']
+
+        if logo_path.startswith('/media/'):
+            logo_path = logo_path.replace('/media/', '')
+            document_root = settings.MEDIA_ROOT
+        elif logo_path.startswith('/static/'):
+            logo_path = logo_path.replace('/static/', '/')
+            document_root = settings.STATIC_ROOT
+        else:
+            return HttpResponse(status=status.HTTP_404_NOT_FOUND)
+        return serve(request, logo_path, document_root=document_root)

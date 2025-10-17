@@ -1,21 +1,21 @@
-from django.core.cache import cache
-from django.conf import settings
-from django.core.mail import send_mail
 from celery import shared_task
-
-from common.sdk.sms.exceptions import CodeError, CodeExpired, CodeSendTooFrequently
-from common.sdk.sms.endpoint import SMS
-from common.exceptions import JMSException
-from common.utils.random import random_string
-from common.utils import get_logger
+from django.conf import settings
+from django.core.cache import cache
 from django.utils.translation import gettext_lazy as _
+
+from common.exceptions import JMSException
+from common.sdk.sms.endpoint import SMS
+from common.sdk.sms.exceptions import CodeError, CodeExpired, CodeSendTooFrequently
+from common.tasks import send_mail_async
+from common.utils import get_logger
+from common.utils.random import random_string
 
 logger = get_logger(__file__)
 
 
-@shared_task(verbose_name=_('Send email'))
-def send_async(sender):
-    sender.gen_and_send()
+@shared_task(verbose_name=_('Send SMS code'))
+def send_sms_async(target, code):
+    SMS().send_verify_code(target, code)
 
 
 class SendAndVerifyCodeUtil(object):
@@ -30,14 +30,14 @@ class SendAndVerifyCodeUtil(object):
         self.other_args = kwargs
 
     def gen_and_send_async(self):
-        return send_async.delay(self)
-
-    def gen_and_send(self):
         ttl = self.__ttl()
         if ttl > 0:
-            logger.error('Send sms too frequently, delay {}'.format(ttl))
+            logger.warning('Send sms too frequently, delay {}'.format(ttl))
             raise CodeSendTooFrequently(ttl)
 
+        return self.gen_and_send()
+
+    def gen_and_send(self):
         try:
             if not self.code:
                 self.code = self.__generate()
@@ -67,19 +67,20 @@ class SendAndVerifyCodeUtil(object):
         return cache.get(self.key)
 
     def __generate(self):
-        code = random_string(4, lower=False, upper=False)
+        code = random_string(settings.SMS_CODE_LENGTH, lower=False, upper=False)
         self.code = code
         return code
 
     def __send_with_sms(self):
-        sms = SMS()
-        sms.send_verify_code(self.target, self.code)
+        send_sms_async.apply_async(args=(self.target, self.code), priority=100)
 
     def __send_with_email(self):
-        subject = self.other_args.get('subject')
-        message = self.other_args.get('message')
-        from_email = settings.EMAIL_FROM or settings.EMAIL_HOST_USER
-        send_mail(subject, message, from_email, [self.target], html_message=message)
+        subject = self.other_args.get('subject', '')
+        message = self.other_args.get('message', '')
+        send_mail_async.apply_async(
+            args=(subject, message, [self.target]),
+            kwargs={'html_message': message}, priority=100
+        )
 
     def __send(self, code):
         """
@@ -91,4 +92,4 @@ class SendAndVerifyCodeUtil(object):
             self.__send_with_email()
 
         cache.set(self.key, self.code, self.timeout)
-        logger.info(f'Send verify code to {self.target}: {code}')
+        logger.debug(f'Send verify code to {self.target}')

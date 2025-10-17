@@ -1,20 +1,22 @@
 from django.db import models
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from assets.const import Connectivity
 from common.db.fields import TreeChoices
 
-string_punctuation = '!#$%&()*+,-.:;<=>?@[]^_~'
 DEFAULT_PASSWORD_LENGTH = 30
 DEFAULT_PASSWORD_RULES = {
     'length': DEFAULT_PASSWORD_LENGTH,
-    'symbol_set': string_punctuation
+    'uppercase': True,
+    'lowercase': True,
+    'digit': True,
+    'symbol': True,
 }
 
 __all__ = [
     'AutomationTypes', 'SecretStrategy', 'SSHKeyStrategy', 'Connectivity',
     'DEFAULT_PASSWORD_LENGTH', 'DEFAULT_PASSWORD_RULES', 'TriggerChoice',
-    'PushAccountActionChoice',
+    'PushAccountActionChoice', 'AccountBackupType', 'ChangeSecretRecordStatusChoice',
 ]
 
 
@@ -22,6 +24,7 @@ class AutomationTypes(models.TextChoices):
     push_account = 'push_account', _('Push account')
     change_secret = 'change_secret', _('Change secret')
     verify_account = 'verify_account', _('Verify account')
+    remove_account = 'remove_account', _('Remove account')
     gather_accounts = 'gather_accounts', _('Gather accounts')
     verify_gateway_account = 'verify_gateway_account', _('Verify gateway account')
 
@@ -41,8 +44,8 @@ class AutomationTypes(models.TextChoices):
 
 
 class SecretStrategy(models.TextChoices):
-    custom = 'specific', _('Specific password')
-    random = 'random', _('Random')
+    custom = 'specific', _('Specific secret')
+    random = 'random', _('Random generate')
 
 
 class SSHKeyStrategy(models.TextChoices):
@@ -93,3 +96,16 @@ class TriggerChoice(models.TextChoices, TreeChoices):
 class PushAccountActionChoice(models.TextChoices):
     create_and_push = 'create_and_push', _('Create and push')
     only_create = 'only_create', _('Only create')
+
+
+class AccountBackupType(models.TextChoices):
+    """Backup type"""
+    email = 'email', _('Email')
+    # 目前只支持sftp方式
+    object_storage = 'object_storage', _('SFTP')
+
+
+class ChangeSecretRecordStatusChoice(models.TextChoices):
+    failed = 'failed', _('Failed')
+    success = 'success', _('Success')
+    pending = 'pending', _('Pending')

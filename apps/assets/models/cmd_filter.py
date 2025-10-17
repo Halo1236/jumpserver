@@ -4,7 +4,7 @@ import uuid
 
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from common.utils import get_logger
 from orgs.mixins.models import OrgModelMixin
@@ -29,7 +29,7 @@ class CommandFilter(OrgModelMixin):
     )
     nodes = models.ManyToManyField(
         'assets.Node', related_name='cmd_filters', blank=True,
-        verbose_name=_("Nodes")
+        verbose_name=_("Node")
     )
     assets = models.ManyToManyField(
         'assets.Asset', related_name='cmd_filters', blank=True,

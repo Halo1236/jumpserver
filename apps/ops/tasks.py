@@ -1,15 +1,21 @@
 # coding: utf-8
+import datetime
+import time
 
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
-from django.utils.translation import ugettext_lazy as _
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 from django_celery_beat.models import PeriodicTask
+from django.conf import settings
 
-from common.utils import get_logger, get_object_or_none
+from common.const.crontab import CRONTAB_AT_AM_TWO
+from common.utils import get_logger, get_object_or_none, get_log_keep_day
 from ops.celery import app
+from ops.const import Types
 from orgs.utils import tmp_to_org, tmp_to_root_org
 from .celery.decorator import (
-    register_as_period_task, after_app_ready_start
+    register_as_period_task, after_app_ready_start, after_app_shutdown_clean_periodic
 )
 from .celery.utils import (
     create_or_update_celery_periodic_tasks, get_celery_periodic_task,
@@ -30,24 +36,34 @@ def job_task_activity_callback(self, job_id, *args, **kwargs):
     return resource_ids, org_id
 
 
+def _run_ops_job_execution(execution):
+    try:
+        with tmp_to_org(execution.org):
+            execution.start()
+    except SoftTimeLimitExceeded:
+        execution.set_error('Run timeout')
+        logger.error("Run adhoc timeout")
+    except Exception as e:
+        execution.set_error(e)
+        logger.error("Start adhoc execution error: {}".format(e))
+
+
 @shared_task(
     soft_time_limit=60, queue="ansible", verbose_name=_("Run ansible task"),
     activity_callback=job_task_activity_callback
 )
 def run_ops_job(job_id):
-    job = get_object_or_none(Job, id=job_id)
+    with tmp_to_root_org():
+        job = get_object_or_none(Job, id=job_id)
+    if not job:
+        logger.error("Did not get the execution: {}".format(job_id))
+        return
+    if not settings.SECURITY_COMMAND_EXECUTION and job.type != Types.upload_file:
+        return
     with tmp_to_org(job.org):
         execution = job.create_execution()
         execution.creator = job.creator
-        run_ops_job_execution(execution.id)
-        try:
-            execution.start()
-        except SoftTimeLimitExceeded:
-            execution.set_error('Run timeout')
-            logger.error("Run adhoc timeout")
-        except Exception as e:
-            execution.set_error(e)
-            logger.error("Start adhoc execution error: {}".format(e))
+        _run_ops_job_execution(execution)
 
 
 def job_execution_task_activity_callback(self, execution_id, *args, **kwargs):
@@ -64,16 +80,15 @@ def job_execution_task_activity_callback(self, execution_id, *args, **kwargs):
     activity_callback=job_execution_task_activity_callback
 )
 def run_ops_job_execution(execution_id, **kwargs):
-    execution = get_object_or_none(JobExecution, id=execution_id)
-    try:
-        with tmp_to_org(execution.org):
-            execution.start()
-    except SoftTimeLimitExceeded:
-        execution.set_error('Run timeout')
-        logger.error("Run adhoc timeout")
-    except Exception as e:
-        execution.set_error(e)
-        logger.error("Start adhoc execution error: {}".format(e))
+    with tmp_to_root_org():
+        execution = get_object_or_none(JobExecution, id=execution_id)
+
+    if not execution:
+        logger.error("Did not get the execution: {}".format(execution_id))
+        return
+    if not settings.SECURITY_COMMAND_EXECUTION and execution.job.type != Types.upload_file:
+        return
+    _run_ops_job_execution(execution)
 
 
 @shared_task(verbose_name=_('Clear celery periodic tasks'))
@@ -116,3 +131,23 @@ def check_server_performance_period():
 def clean_up_unexpected_jobs():
     with tmp_to_root_org():
         JobExecution.clean_unexpected_execution()
+
+
+@shared_task(verbose_name=_('Clean job_execution db record'))
+@register_as_period_task(crontab=CRONTAB_AT_AM_TWO)
+def clean_job_execution_period():
+    logger.info("Start clean job_execution db record")
+    now = timezone.now()
+    days = get_log_keep_day('JOB_EXECUTION_KEEP_DAYS')
+    expired_day = now - datetime.timedelta(days=days)
+    with tmp_to_root_org():
+        del_res = JobExecution.objects.filter(date_created__lt=expired_day).delete()
+        logger.info(f"clean job_execution db record success! delete {days} days {del_res[0]} records")
+
+# 测试使用，注释隐藏
+# @shared_task
+# def longtime_add(x, y):
+#     print('long time task begins')
+#     time.sleep(50)
+#     print('long time task finished')
+#     return x + y

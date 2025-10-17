@@ -6,12 +6,13 @@ import uuid
 from celery import current_task
 from django.db import models
 from django.db.models import F
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
+from accounts.const import AccountBackupType
 from common.const.choices import Trigger
+from common.db import fields
 from common.db.encoder import ModelJSONFieldEncoder
-from common.utils import get_logger
-from common.utils import lazyproperty
+from common.utils import get_logger, lazyproperty
 from ops.mixin import PeriodTaskModelMixin
 from orgs.mixins.models import OrgModelMixin, JMSOrgBaseModel
 
@@ -22,10 +23,28 @@ logger = get_logger(__file__)
 
 class AccountBackupAutomation(PeriodTaskModelMixin, JMSOrgBaseModel):
     types = models.JSONField(default=list)
-    recipients = models.ManyToManyField(
-        'users.User', related_name='recipient_escape_route_plans', blank=True,
-        verbose_name=_("Recipient")
+    backup_type = models.CharField(max_length=128, choices=AccountBackupType.choices,
+                                   default=AccountBackupType.email.value, verbose_name=_('Backup Type'))
+    is_password_divided_by_email = models.BooleanField(default=True, verbose_name=_('Is Password Divided'))
+    is_password_divided_by_obj_storage = models.BooleanField(default=True, verbose_name=_('Is Password Divided'))
+    recipients_part_one = models.ManyToManyField(
+        'users.User', related_name='recipient_part_one_plans', blank=True,
+        verbose_name=_("Recipient part one")
     )
+    recipients_part_two = models.ManyToManyField(
+        'users.User', related_name='recipient_part_two_plans', blank=True,
+        verbose_name=_("Recipient part two")
+    )
+    obj_recipients_part_one = models.ManyToManyField(
+        'terminal.ReplayStorage', related_name='obj_recipient_part_one_plans', blank=True,
+        verbose_name=_("Object Storage Recipient part one")
+    )
+    obj_recipients_part_two = models.ManyToManyField(
+        'terminal.ReplayStorage', related_name='obj_recipient_part_two_plans', blank=True,
+        verbose_name=_("Object Storage Recipient part two")
+    )
+    zip_encrypt_password = fields.EncryptCharField(max_length=4096, blank=True, null=True,
+                                                   verbose_name=_('Zip Encrypt Password'))
 
     def __str__(self):
         return f'{self.name}({self.org_id})'
@@ -45,6 +64,7 @@ class AccountBackupAutomation(PeriodTaskModelMixin, JMSOrgBaseModel):
 
     def to_attr_json(self):
         return {
+            'id': self.id,
             'name': self.name,
             'is_periodic': self.is_periodic,
             'interval': self.interval,
@@ -52,10 +72,26 @@ class AccountBackupAutomation(PeriodTaskModelMixin, JMSOrgBaseModel):
             'org_id': self.org_id,
             'created_by': self.created_by,
             'types': self.types,
-            'recipients': {
-                str(recipient.id): (str(recipient), bool(recipient.secret_key))
-                for recipient in self.recipients.all()
-            }
+            'backup_type': self.backup_type,
+            'is_password_divided_by_email': self.is_password_divided_by_email,
+            'is_password_divided_by_obj_storage': self.is_password_divided_by_obj_storage,
+            'zip_encrypt_password': self.zip_encrypt_password,
+            'recipients_part_one': {
+                str(user.id): (str(user), bool(user.secret_key))
+                for user in self.recipients_part_one.all()
+            },
+            'recipients_part_two': {
+                str(user.id): (str(user), bool(user.secret_key))
+                for user in self.recipients_part_two.all()
+            },
+            'obj_recipients_part_one': {
+                str(obj_storage.id): (str(obj_storage.name), str(obj_storage.type))
+                for obj_storage in self.obj_recipients_part_one.all()
+            },
+            'obj_recipients_part_two': {
+                str(obj_storage.id): (str(obj_storage.name), str(obj_storage.type))
+                for obj_storage in self.obj_recipients_part_two.all()
+            },
         }
 
     @property
@@ -68,7 +104,7 @@ class AccountBackupAutomation(PeriodTaskModelMixin, JMSOrgBaseModel):
         except AttributeError:
             hid = str(uuid.uuid4())
         execution = AccountBackupExecution.objects.create(
-            id=hid, plan=self, plan_snapshot=self.to_attr_json(), trigger=trigger
+            id=hid, plan=self, snapshot=self.to_attr_json(), trigger=trigger
         )
         return execution.start()
 
@@ -85,7 +121,7 @@ class AccountBackupExecution(OrgModelMixin):
     timedelta = models.FloatField(
         default=0.0, verbose_name=_('Time'), null=True
     )
-    plan_snapshot = models.JSONField(
+    snapshot = models.JSONField(
         encoder=ModelJSONFieldEncoder, default=dict,
         blank=True, null=True, verbose_name=_('Account backup snapshot')
     )
@@ -108,15 +144,8 @@ class AccountBackupExecution(OrgModelMixin):
 
     @property
     def types(self):
-        types = self.plan_snapshot.get('types')
+        types = self.snapshot.get('types')
         return types
-
-    @property
-    def recipients(self):
-        recipients = self.plan_snapshot.get('recipients')
-        if not recipients:
-            return []
-        return recipients.values()
 
     @lazyproperty
     def backup_accounts(self):

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #
-from django.utils.translation import ugettext_lazy as _
 from django.db.models import TextChoices, IntegerChoices
+from django.utils.translation import gettext_lazy as _
 
 DEFAULT_CITY = _("Unknown")
 
@@ -16,6 +16,7 @@ class OperateChoices(TextChoices):
     rename = "rename", _("Rename")
     symlink = "symlink", _("Symlink")
     download = "download", _("Download")
+    rename_dir = "rename_dir", _("Rename dir")
 
 
 class ActionChoices(TextChoices):
@@ -24,9 +25,20 @@ class ActionChoices(TextChoices):
     delete = "delete", _("Delete")
     create = "create", _("Create")
     # Activities action
+    download = "download", _("Download")
     connect = "connect", _("Connect")
     login = "login", _("Login")
     change_auth = "change_password", _("Change password")
+
+    accept = 'accept', _('Accept')
+    review = 'review', _('Review')
+    notice = 'notice', _('Notifications')
+    reject = 'reject', _('Reject')
+    approve = 'approve', _('Approve')
+    close = 'close', _('Close')
+
+    # Custom action
+    finished = 'finished', _('Finished')
 
 
 class LoginTypeChoices(TextChoices):

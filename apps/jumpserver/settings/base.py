@@ -1,12 +1,13 @@
 import os
 import platform
+import re
 
 from redis.sentinel import SentinelManagedSSLConnection
 
 if platform.system() == 'Darwin' and platform.machine() == 'arm64':
     import pymysql
 
-    pymysql.version_info = (1, 4, 2, "final", 0)
+    # pymysql.version_info = (1, 4, 2, "final", 0)
     pymysql.install_as_MySQLdb()
 
 from django.urls import reverse_lazy
@@ -37,7 +38,8 @@ BASE_DIR = const.BASE_DIR
 PROJECT_DIR = const.PROJECT_DIR
 APPS_DIR = os.path.join(PROJECT_DIR, 'apps')
 DATA_DIR = os.path.join(PROJECT_DIR, 'data')
-ANSIBLE_DIR = os.path.join(DATA_DIR, 'ansible')
+SHARE_DIR = os.path.join(DATA_DIR, 'share')
+ANSIBLE_DIR = os.path.join(SHARE_DIR, 'ansible')
 CERTS_DIR = os.path.join(DATA_DIR, 'certs')
 
 # Quick-start development settings - unsuitable for production
@@ -53,6 +55,8 @@ BOOTSTRAP_TOKEN = CONFIG.BOOTSTRAP_TOKEN
 DEBUG = CONFIG.DEBUG
 # SECURITY WARNING: If you run with debug turned on, more debug msg with be log
 DEBUG_DEV = CONFIG.DEBUG_DEV
+# SECURITY WARNING: If you run ansible task with debug turned on, more debug msg with be log
+DEBUG_ANSIBLE = CONFIG.DEBUG_ANSIBLE
 
 # Absolute url for some case, for example email link
 SITE_URL = CONFIG.SITE_URL
@@ -63,14 +67,54 @@ APPLET_DOWNLOAD_HOST = CONFIG.APPLET_DOWNLOAD_HOST
 # https://docs.djangoproject.com/en/4.1/ref/settings/
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# https://docs.djangoproject.com/en/4.1/ref/settings/#std-setting-CSRF_TRUSTED_ORIGINS
-CSRF_TRUSTED_ORIGINS = CONFIG.CSRF_TRUSTED_ORIGINS.split(',') if CONFIG.CSRF_TRUSTED_ORIGINS else []
-
 # LOG LEVEL
 LOG_LEVEL = CONFIG.LOG_LEVEL
+DOMAINS = CONFIG.DOMAINS or 'localhost'
+for name in ['SERVER_NAME', 'CORE_HOST']:
+    env = os.environ.get(name)
+    if not env:
+        continue
+    DOMAINS += ',{}'.format(env.replace(" ", ","))
+if CONFIG.SITE_URL:
+    DOMAINS += ',{}'.format(CONFIG.SITE_URL)
+
+ALLOWED_DOMAINS = DOMAINS.split(',') if DOMAINS else ['localhost:8080']
+ALLOWED_DOMAINS = [host.strip() for host in ALLOWED_DOMAINS]
+ALLOWED_DOMAINS = [host.replace('http://', '').replace('https://', '') for host in ALLOWED_DOMAINS if host]
+ALLOWED_DOMAINS = [host.split('/')[0] for host in ALLOWED_DOMAINS if host]
+ALLOWED_DOMAINS = [re.sub(':80$|:443$', '', host) for host in ALLOWED_DOMAINS]
+
+DEBUG_HOSTS = ('127.0.0.1', 'localhost', 'core')
+DEBUG_PORT = ['8080', '80', ]
+if DEBUG:
+    DEBUG_PORT.extend(['4200', '9528'])
+DEBUG_HOST_PORTS = ['{}:{}'.format(host, port) for host in DEBUG_HOSTS for port in DEBUG_PORT]
+ALLOWED_DOMAINS.extend(DEBUG_HOST_PORTS)
+
+print("ALLOWED_HOSTS: ", )
+for host in ALLOWED_DOMAINS:
+    print('  - ' + host.lstrip('.'))
 
 ALLOWED_HOSTS = ['*']
 
+# https://docs.djangoproject.com/en/4.1/ref/settings/#std-setting-CSRF_TRUSTED_ORIGINS
+CSRF_TRUSTED_ORIGINS = []
+for host_port in ALLOWED_DOMAINS:
+    origin = host_port.strip('.')
+    if origin.startswith('http'):
+        CSRF_TRUSTED_ORIGINS.append(origin)
+        continue
+    is_local_origin = origin.split(':')[0] in DEBUG_HOSTS
+    for schema in ['https', 'http']:
+        if is_local_origin and schema == 'https':
+            continue
+        CSRF_TRUSTED_ORIGINS.append('{}://*.{}'.format(schema, origin))
+
+CORS_ALLOWED_ORIGINS = [o.replace('*.', '') for o in CSRF_TRUSTED_ORIGINS]
+CSRF_FAILURE_VIEW = 'jumpserver.views.other.csrf_failure'
+# print("CSRF_TRUSTED_ORIGINS: ")
+# for origin in CSRF_TRUSTED_ORIGINS:
+# print('  - ' + origin)
 # Max post update field num
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
 
@@ -92,15 +136,15 @@ INSTALLED_APPS = [
     'acls.apps.AclsConfig',
     'notifications.apps.NotificationsConfig',
     'rbac.apps.RBACConfig',
-    'jms_oidc_rp',
+    'labels.apps.LabelsConfig',
     'rest_framework',
-    'rest_framework_swagger',
     'drf_yasg',
     'django_cas_ng',
     'channels',
     'django_filters',
     'bootstrap3',
     'captcha',
+    'corsheaders',
     'private_storage',
     'django_celery_beat',
     'django.contrib.auth',
@@ -119,6 +163,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -128,6 +173,7 @@ MIDDLEWARE = [
     'jumpserver.middleware.DemoMiddleware',
     'jumpserver.middleware.RequestMiddleware',
     'jumpserver.middleware.RefererCheckMiddleware',
+    'jumpserver.middleware.SQLCountMiddleware',
     'orgs.middleware.OrgMiddleware',
     'authentication.backends.oidc.middleware.OIDCRefreshIDTokenMiddleware',
     'authentication.backends.cas.middleware.CASMiddleware',
@@ -135,8 +181,12 @@ MIDDLEWARE = [
     'authentication.middleware.ThirdPartyLoginMiddleware',
     'authentication.middleware.SessionCookieMiddleware',
     'simple_history.middleware.HistoryRequestMiddleware',
+    'jumpserver.middleware.SafeRedirectMiddleware',
     'jumpserver.middleware.EndMiddleware',
 ]
+
+if DEBUG or DEBUG_DEV:
+    INSTALLED_APPS.insert(0, 'daphne')
 
 ROOT_URLCONF = 'jumpserver.urls'
 
@@ -185,11 +235,10 @@ CSRF_COOKIE_NAME = '{}csrftoken'.format(SESSION_COOKIE_NAME_PREFIX)
 SESSION_COOKIE_NAME = '{}sessionid'.format(SESSION_COOKIE_NAME_PREFIX)
 
 SESSION_COOKIE_AGE = CONFIG.SESSION_COOKIE_AGE
-SESSION_EXPIRE_AT_BROWSER_CLOSE = True
-# 自定义的配置，SESSION_EXPIRE_AT_BROWSER_CLOSE 始终为 True, 下面这个来控制是否强制关闭后过期 cookie
-SESSION_EXPIRE_AT_BROWSER_CLOSE_FORCE = CONFIG.SESSION_EXPIRE_AT_BROWSER_CLOSE_FORCE
 SESSION_SAVE_EVERY_REQUEST = CONFIG.SESSION_SAVE_EVERY_REQUEST
-SESSION_ENGINE = "django.contrib.sessions.backends.{}".format(CONFIG.SESSION_ENGINE)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = CONFIG.SESSION_EXPIRE_AT_BROWSER_CLOSE
+VIEW_ASSET_ONLINE_SESSION_INFO = CONFIG.VIEW_ASSET_ONLINE_SESSION_INFO
+SESSION_ENGINE = "common.sessions.{}".format(CONFIG.SESSION_ENGINE)
 
 MESSAGE_STORAGE = 'django.contrib.messages.storage.cookie.CookieStorage'
 # Database
@@ -263,12 +312,16 @@ STATICFILES_DIRS = (
     os.path.join(BASE_DIR, "static"),
 )
 
-# Media files (File, ImageField) will be save these
+# Media files (File, ImageField) will be safe these
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(PROJECT_DIR, 'data', 'media').replace('\\', '/') + '/'
 
 PRIVATE_STORAGE_ROOT = MEDIA_ROOT
 PRIVATE_STORAGE_AUTH_FUNCTION = 'jumpserver.rewriting.storage.permissions.allow_access'
+PRIVATE_STORAGE_INTERNAL_URL = '/private-media/'
+PRIVATE_STORAGE_SERVER = 'jumpserver.rewriting.storage.servers.StaticFileServer'
+
+FILE_UPLOAD_TEMP_DIR = CONFIG.FILE_UPLOAD_TEMP_DIR
 
 # Use django-bootstrap-form to format template, input max width arg
 # BOOTSTRAP_COLUMN_COUNT = 11
@@ -277,6 +330,7 @@ PRIVATE_STORAGE_AUTH_FUNCTION = 'jumpserver.rewriting.storage.permissions.allow_
 FIXTURE_DIRS = [os.path.join(BASE_DIR, 'fixtures'), ]
 
 # Email config
+EMAIL_PROTOCOL = CONFIG.EMAIL_PROTOCOL
 EMAIL_HOST = CONFIG.EMAIL_HOST
 EMAIL_PORT = CONFIG.EMAIL_PORT
 EMAIL_HOST_USER = CONFIG.EMAIL_HOST_USER
@@ -292,6 +346,8 @@ AUTH_USER_MODEL = 'users.User'
 # File Upload Permissions
 FILE_UPLOAD_PERMISSIONS = 0o644
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o755
+
+X_FRAME_OPTIONS = CONFIG.X_FRAME_OPTIONS
 
 # Cache use redis
 REDIS_SSL_KEY = exist_or_default(os.path.join(CERTS_DIR, 'redis_client.key'), None)
@@ -353,7 +409,7 @@ if REDIS_SENTINEL_SERVICE_NAME and REDIS_SENTINELS:
 else:
     REDIS_LOCATION_NO_DB = '%(protocol)s://:%(password)s@%(host)s:%(port)s/{}' % {
         'protocol': REDIS_PROTOCOL,
-        'password': CONFIG.REDIS_PASSWORD,
+        'password': CONFIG.REDIS_PASSWORD_QUOTE,
         'host': CONFIG.REDIS_HOST,
         'port': CONFIG.REDIS_PORT,
     }

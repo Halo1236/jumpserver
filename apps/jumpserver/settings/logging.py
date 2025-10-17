@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 #
 import os
+
 from ..const import PROJECT_DIR, CONFIG
 
-LOG_DIR = os.path.join(PROJECT_DIR, 'logs')
+LOG_DIR = os.path.join(PROJECT_DIR, 'data', 'logs')
 JUMPSERVER_LOG_FILE = os.path.join(LOG_DIR, 'jumpserver.log')
 DRF_EXCEPTION_LOG_FILE = os.path.join(LOG_DIR, 'drf_exception.log')
 UNEXPECTED_EXCEPTION_LOG_FILE = os.path.join(LOG_DIR, 'unexpected_exception.log')
@@ -16,11 +17,11 @@ LOGGING = {
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '%(levelname)s %(asctime)s %(module)s %(process)d %(thread)d %(message)s'
+            'format': '%(levelname)s %(asctime)s %(pathname)s:%(lineno)d  %(message)s'
         },
         'main': {
             'datefmt': '%Y-%m-%d %H:%M:%S',
-            'format': '%(asctime)s [%(module)s %(levelname)s] %(message)s',
+            'format': '%(asctime)s [%(levelname).4s] %(message)s',
         },
         'exception': {
             'datefmt': '%Y-%m-%d %H:%M:%S',
@@ -132,9 +133,14 @@ LOGGING = {
             'handlers': ['null'],
             'level': 'ERROR'
         }
-
     }
 }
+
+if CONFIG.DEBUG_DEV:
+    LOGGING['loggers']['django.db'] = {
+       'handlers': ['console', 'file'],
+       'level': 'DEBUG'
+    }
 
 SYSLOG_ENABLE = CONFIG.SYSLOG_ENABLE
 

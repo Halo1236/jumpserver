@@ -6,13 +6,16 @@ import logging
 from collections import defaultdict
 
 from django.db import models
+from django.db.models import Q
 from django.forms import model_to_dict
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from assets import const
 from common.db.fields import EncryptMixin
 from common.utils import lazyproperty
+from labels.mixins import LabeledMixin
 from orgs.mixins.models import OrgManager, JMSOrgBaseModel
+from rbac.models import ContentType
 from ..base import AbsConnectivity
 from ..platform import Platform
 
@@ -116,7 +119,40 @@ class Protocol(models.Model):
         return self.asset_platform_protocol.get('public', True)
 
 
-class Asset(NodesRelationMixin, AbsConnectivity, JMSOrgBaseModel):
+class JSONFilterMixin:
+    @staticmethod
+    def get_json_filter_attr_q(name, value, match):
+        """
+        :param name: 属性名称
+        :param value: 定义的结果
+        :param match: 匹配方式
+        :return:
+        """
+        from ..node import Node
+        if not isinstance(value, (list, tuple)):
+            value = [value]
+        if name == 'nodes':
+            nodes = Node.objects.filter(id__in=value)
+            if match == 'm2m_all':
+                assets = Asset.objects.all()
+                for n in nodes:
+                    children_pattern = Node.get_node_all_children_key_pattern(n.key)
+                    assets = assets.filter(nodes__key__regex=children_pattern)
+                q = Q(id__in=assets.values_list('id', flat=True))
+                return q
+            else:
+                children = Node.get_nodes_all_children(nodes, with_self=True).values_list('id', flat=True)
+                return Q(nodes__in=children)
+        elif name == 'category':
+            return Q(platform__category__in=value)
+        elif name == 'type':
+            return Q(platform__type__in=value)
+        elif name == 'protocols':
+            return Q(protocols__name__in=value)
+        return None
+
+
+class Asset(NodesRelationMixin, LabeledMixin, AbsConnectivity, JSONFilterMixin, JMSOrgBaseModel):
     Category = const.Category
     Type = const.AllTypes
 
@@ -126,9 +162,8 @@ class Asset(NodesRelationMixin, AbsConnectivity, JMSOrgBaseModel):
     domain = models.ForeignKey("assets.Domain", null=True, blank=True, related_name='assets',
                                verbose_name=_("Domain"), on_delete=models.SET_NULL)
     nodes = models.ManyToManyField('assets.Node', default=default_node, related_name='assets',
-                                   verbose_name=_("Nodes"))
+                                   verbose_name=_("Node"))
     is_active = models.BooleanField(default=True, verbose_name=_('Is active'))
-    labels = models.ManyToManyField('assets.Label', blank=True, related_name='assets', verbose_name=_("Labels"))
     gathered_info = models.JSONField(verbose_name=_('Gathered info'), default=dict, blank=True)  # 资产的一些信息，如 硬件信息
     custom_info = models.JSONField(verbose_name=_('Custom info'), default=dict)
 
@@ -136,6 +171,13 @@ class Asset(NodesRelationMixin, AbsConnectivity, JMSOrgBaseModel):
 
     def __str__(self):
         return '{0.name}({0.address})'.format(self)
+
+    def get_labels(self):
+        from labels.models import Label, LabeledResource
+        res_type = ContentType.objects.get_for_model(self.__class__.label_model())
+        label_ids = LabeledResource.objects.filter(res_type=res_type, res_id=self.id) \
+            .values_list('label_id', flat=True)
+        return Label.objects.filter(id__in=label_ids)
 
     @staticmethod
     def get_spec_values(instance, fields):
@@ -180,15 +222,14 @@ class Asset(NodesRelationMixin, AbsConnectivity, JMSOrgBaseModel):
     @lazyproperty
     def auto_config(self):
         platform = self.platform
-        automation = self.platform.automation
         auto_config = {
             'su_enabled': platform.su_enabled,
             'domain_enabled': platform.domain_enabled,
             'ansible_enabled': False
         }
+        automation = getattr(self.platform, 'automation', None)
         if not automation:
             return auto_config
-
         auto_config.update(model_to_dict(automation))
         return auto_config
 
@@ -196,8 +237,11 @@ class Asset(NodesRelationMixin, AbsConnectivity, JMSOrgBaseModel):
         return self.address
 
     def get_target_ssh_port(self):
-        protocol = self.protocols.all().filter(name='ssh').first()
-        return protocol.port if protocol else 22
+        return self.get_protocol_port('ssh')
+
+    def get_protocol_port(self, protocol):
+        protocol = self.protocols.all().filter(name=protocol).first()
+        return protocol.port if protocol else 0
 
     @property
     def is_valid(self):
@@ -304,7 +348,7 @@ class Asset(NodesRelationMixin, AbsConnectivity, JMSOrgBaseModel):
     class Meta:
         unique_together = [('org_id', 'name')]
         verbose_name = _("Asset")
-        ordering = ["name", ]
+        ordering = []
         permissions = [
             ('refresh_assethardwareinfo', _('Can refresh asset hardware info')),
             ('test_assetconnectivity', _('Can test asset connectivity')),

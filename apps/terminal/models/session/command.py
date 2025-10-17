@@ -2,7 +2,7 @@ from __future__ import unicode_literals
 
 from django.db import models
 from django.db.models.signals import post_save
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from terminal.backends.command.models import AbstractSessionCommand
 
@@ -59,6 +59,16 @@ class Command(AbstractSessionCommand):
             command = cls.from_dict(d)
             commands.append(command)
         return commands
+
+    @staticmethod
+    def get_all_type_queryset_tuple():
+        from terminal.models import CommandStorage
+        storage_qs = CommandStorage.objects.exclude(name='null')
+        return (
+            (storage.type, storage.get_command_queryset())
+            for storage in storage_qs
+            if storage.is_valid()
+        )
 
     class Meta:
         db_table = "terminal_command"

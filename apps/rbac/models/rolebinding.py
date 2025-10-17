@@ -56,6 +56,7 @@ class RoleBinding(JMSBaseModel):
         on_delete=models.CASCADE, verbose_name=_('Organization')
     )
     objects = RoleBindingManager()
+    objects_raw = models.Manager()
 
     class Meta:
         verbose_name = _('Role binding')
@@ -117,6 +118,14 @@ class RoleBinding(JMSBaseModel):
         return default_system_orgs | orgs.exclude(id__in=default_system_org_ids).order_by('name')
 
     @classmethod
+    def get_user_joined_orgs(cls, user):
+        from orgs.models import Organization
+        org_ids = cls.objects.filter(user=user, scope=Scope.org) \
+            .values_list('org', flat=True) \
+            .distinct()
+        return Organization.objects.filter(id__in=org_ids)
+
+    @classmethod
     def get_user_has_the_perm_orgs(cls, perm, user):
         from orgs.models import Organization
 
@@ -144,13 +153,15 @@ class RoleBinding(JMSBaseModel):
         orgs = cls.orgs_order_by_name(orgs)
         workbench_perm = 'rbac.view_workbench'
         # 全局组织
+        has_root_org = False
+        root_org = Organization.root()
         if orgs and perm != workbench_perm and user.has_perm('orgs.view_rootorg'):
-            root_org = Organization.root()
-            orgs = [root_org, *list(orgs)]
+            has_root_org = True
         elif orgs and perm == workbench_perm and user.has_perm('orgs.view_alljoinedorg'):
-            # Todo: 先复用组织
-            root_org = Organization.root()
-            root_org.name = _("All organizations")
+            root_org.name = _('All organizations')
+            has_root_org = True
+
+        if has_root_org and system_bindings:
             orgs = [root_org, *list(orgs)]
         return orgs
 

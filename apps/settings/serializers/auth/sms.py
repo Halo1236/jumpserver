@@ -1,13 +1,15 @@
-from django.utils.translation import ugettext_lazy as _
+from django.db import models
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from common.serializers.fields import EncryptedField
-from common.validators import PhoneValidator
 from common.sdk.sms import BACKENDS
+from common.serializers.fields import EncryptedField, PhoneField
+from common.validators import PhoneValidator
 
 __all__ = [
+    'BaseSMSSettingSerializer',
     'SMSSettingSerializer', 'AlibabaSMSSettingSerializer', 'TencentSMSSettingSerializer',
-    'HuaweiSMSSettingSerializer', 'CMPP2SMSSettingSerializer'
+    'HuaweiSMSSettingSerializer', 'CMPP2SMSSettingSerializer', 'CustomSMSSettingSerializer',
 ]
 
 
@@ -15,6 +17,9 @@ class SMSSettingSerializer(serializers.Serializer):
     SMS_ENABLED = serializers.BooleanField(default=False, label=_('Enable SMS'))
     SMS_BACKEND = serializers.ChoiceField(
         choices=BACKENDS.choices, default=BACKENDS.ALIBABA, label=_('SMS provider / Protocol')
+    )
+    SMS_CODE_LENGTH = serializers.IntegerField(
+        default=4, min_value=4, max_value=16, label=_('SMS code length')
     )
 
 
@@ -26,9 +31,8 @@ class SignTmplPairSerializer(serializers.Serializer):
 class BaseSMSSettingSerializer(serializers.Serializer):
     PREFIX_TITLE = _('SMS')
 
-    SMS_TEST_PHONE = serializers.CharField(
-        max_length=256, required=False, validators=[PhoneValidator(), ],
-        allow_blank=True, label=_('Test phone')
+    SMS_TEST_PHONE = PhoneField(
+        validators=[PhoneValidator()], required=False, allow_blank=True, allow_null=True, label=_('Test phone')
     )
 
     def to_representation(self, instance):
@@ -86,4 +90,30 @@ class CMPP2SMSSettingSerializer(BaseSMSSettingSerializer):
         if len(sign_name + template_code) > 65:
             # 保证验证码内容在一条短信中(长度小于70字), 签名两边的括号和空格占3个字，再减去2个即可(验证码占用4个但占位符6个
             raise serializers.ValidationError(_('Signature + Template must not exceed 65 words'))
+        return attrs
+
+
+class CustomSMSSettingSerializer(BaseSMSSettingSerializer):
+    class RequestType(models.TextChoices):
+        get = 'get', 'Get'
+        post = 'post', 'Post'
+
+    CUSTOM_SMS_URL = serializers.URLField(required=True, label=_("URL"))
+    CUSTOM_SMS_API_PARAMS = serializers.JSONField(
+        label=_('Parameters'), default={'phone_number': '{phone_number}', 'code': '{code}'}
+    )
+    CUSTOM_SMS_REQUEST_METHOD = serializers.ChoiceField(
+        default=RequestType.get, choices=RequestType.choices, label=_("Request method")
+    )
+
+    def validate(self, attrs):
+        need_params = {'{phone_numbers}', '{code}'}
+        params = attrs.get('CUSTOM_SMS_API_PARAMS', {})
+        # 这里用逗号分隔是保证需要的参数必须是完整的，不能分开在不同的参数中首位相连
+        params_string = ','.join(params.values())
+        for param in need_params:
+            if param not in params_string:
+                raise serializers.ValidationError(
+                _('The value in the parameter must contain %s') % ','.join(need_params)
+            )
         return attrs

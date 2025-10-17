@@ -5,7 +5,7 @@ from django_filters import rest_framework as drf_filters
 
 from assets.models import Node
 from common.drf.filters import BaseFilterSet
-from .models import Account, GatheredAccount
+from .models import Account, GatheredAccount, ChangeSecretRecord
 
 
 class AccountFilterSet(BaseFilterSet):
@@ -13,7 +13,8 @@ class AccountFilterSet(BaseFilterSet):
     hostname = drf_filters.CharFilter(field_name='name', lookup_expr='exact')
     username = drf_filters.CharFilter(field_name="username", lookup_expr='exact')
     address = drf_filters.CharFilter(field_name="asset__address", lookup_expr='exact')
-    asset = drf_filters.CharFilter(field_name="asset_id", lookup_expr='exact')
+    asset_id = drf_filters.CharFilter(field_name="asset", lookup_expr='exact')
+    asset = drf_filters.CharFilter(field_name='asset', lookup_expr='exact')
     assets = drf_filters.CharFilter(field_name='asset_id', lookup_expr='exact')
     nodes = drf_filters.CharFilter(method='filter_nodes')
     node_id = drf_filters.CharFilter(method='filter_nodes')
@@ -45,11 +46,13 @@ class AccountFilterSet(BaseFilterSet):
 
     class Meta:
         model = Account
-        fields = ['id', 'asset_id', 'source_id']
+        fields = ['id', 'asset', 'source_id', 'secret_type']
 
 
 class GatheredAccountFilterSet(BaseFilterSet):
     node_id = drf_filters.CharFilter(method='filter_nodes')
+    asset_id = drf_filters.CharFilter(field_name='asset_id', lookup_expr='exact')
+    asset_name = drf_filters.CharFilter(field_name='asset__name', lookup_expr='icontains')
 
     @staticmethod
     def filter_nodes(queryset, name, value):
@@ -57,4 +60,14 @@ class GatheredAccountFilterSet(BaseFilterSet):
 
     class Meta:
         model = GatheredAccount
-        fields = ['id', 'asset_id', 'username']
+        fields = ['id', 'username']
+
+
+class ChangeSecretRecordFilterSet(BaseFilterSet):
+    asset_name = drf_filters.CharFilter(field_name='asset__name', lookup_expr='icontains')
+    account_username = drf_filters.CharFilter(field_name='account__username', lookup_expr='icontains')
+    execution_id = drf_filters.CharFilter(field_name='execution_id', lookup_expr='exact')
+
+    class Meta:
+        model = ChangeSecretRecord
+        fields = ['id', 'status', 'asset_id', 'execution']

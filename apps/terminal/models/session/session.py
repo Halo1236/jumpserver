@@ -2,20 +2,21 @@ from __future__ import unicode_literals
 
 import os
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.cache import cache
 from django.core.files.storage import default_storage
 from django.db import models
 from django.utils import timezone
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
-from assets.const import Protocol
 from assets.models import Asset
+from common.const import OP_LOG_SKIP_SIGNAL
 from common.utils import get_object_or_none, lazyproperty
 from orgs.mixins.models import OrgModelMixin
 from terminal.backends import get_multi_command_storage
-from terminal.const import SessionType
+from terminal.const import SessionType, TerminalType
 from users.models import User
 
 
@@ -45,9 +46,12 @@ class Session(OrgModelMixin):
     date_start = models.DateTimeField(verbose_name=_("Date start"), db_index=True, default=timezone.now)
     date_end = models.DateTimeField(verbose_name=_("Date end"), null=True)
     comment = models.TextField(blank=True, null=True, verbose_name=_("Comment"))
+    cmd_amount = models.IntegerField(default=-1, verbose_name=_("Command amount"))
+    error_reason = models.CharField(max_length=128, blank=True, verbose_name=_("Error reason"))
 
     upload_to = 'replay'
     ACTIVE_CACHE_KEY_PREFIX = 'SESSION_ACTIVE_{}'
+    LOCK_CACHE_KEY_PREFIX = 'TOGGLE_LOCKED_SESSION_{}'
     SUFFIX_MAP = {1: '.gz', 2: '.replay.gz', 3: '.cast.gz', 4: '.replay.mp4'}
     DEFAULT_SUFFIXES = ['.replay.gz', '.cast.gz', '.gz', '.replay.mp4']
 
@@ -112,6 +116,7 @@ class Session(OrgModelMixin):
                     return rel_path
             except:
                 pass
+
     @property
     def asset_obj(self):
         return Asset.objects.get(id=self.asset_id)
@@ -127,15 +132,11 @@ class Session(OrgModelMixin):
     def can_join(self):
         if self.is_finished:
             return False
-        if self.login_from == self.LOGIN_FROM.RT:
-            return False
         if self.type != SessionType.normal:
             # 会话监控仅支持 normal，不支持 tunnel 和 command
             return False
-        if self.protocol in [
-            Protocol.ssh, Protocol.vnc, Protocol.rdp,
-            Protocol.telnet, Protocol.k8s
-        ]:
+        support_types = [TerminalType.lion, TerminalType.koko, TerminalType.razor]
+        if self.terminal.type in support_types:
             return True
         else:
             return False
@@ -146,6 +147,26 @@ class Session(OrgModelMixin):
             return False
         else:
             return True
+
+    @property
+    def is_locked(self):
+        if self.is_finished:
+            return False
+        key = self.LOCK_CACHE_KEY_PREFIX.format(self.id)
+        return bool(cache.get(key))
+
+    @classmethod
+    def lock_session(cls, session_id):
+        key = cls.LOCK_CACHE_KEY_PREFIX.format(session_id)
+        # 会话锁定时间为 None，表示永不过期
+        # You can set TIMEOUT to None so that, by default, cache keys never expire.
+        # https://docs.djangoproject.com/en/4.1/topics/cache/
+        cache.set(key, True, timeout=None)
+
+    @classmethod
+    def unlock_session(cls, session_id):
+        key = cls.LOCK_CACHE_KEY_PREFIX.format(session_id)
+        cache.delete(key)
 
     @lazyproperty
     def terminal_display(self):
@@ -180,6 +201,26 @@ class Session(OrgModelMixin):
 
     @property
     def command_amount(self):
+        if self.need_update_cmd_amount:
+            cmd_amount = self.compute_command_amount()
+            self.cmd_amount = cmd_amount
+            setattr(self, OP_LOG_SKIP_SIGNAL, True)
+            self.save()
+        elif self.need_compute_cmd_amount:
+            cmd_amount = self.compute_command_amount()
+        else:
+            cmd_amount = self.cmd_amount
+        return cmd_amount
+
+    @property
+    def need_update_cmd_amount(self):
+        return self.is_finished and self.need_compute_cmd_amount
+
+    @property
+    def need_compute_cmd_amount(self):
+        return self.cmd_amount == -1
+
+    def compute_command_amount(self):
         command_store = get_multi_command_storage()
         return command_store.count(session=str(self.id))
 
@@ -194,6 +235,14 @@ class Session(OrgModelMixin):
         instance = self.get_asset()
         target_ip = instance.get_target_ip() if instance else ''
         return target_ip
+
+    @property
+    def duration(self):
+        date_end = self.date_end or timezone.now()
+        delta = date_end - self.date_start
+        # 去掉毫秒的显示
+        delta = timedelta(seconds=int(delta.total_seconds()))
+        return str(delta)
 
     @classmethod
     def generate_fake(cls, count=100, is_finished=True):

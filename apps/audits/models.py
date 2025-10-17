@@ -1,15 +1,22 @@
+import os
 import uuid
+from datetime import timedelta
+from importlib import import_module
 
+from django.conf import settings
+from django.core.cache import caches
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
-from django.utils.translation import gettext, ugettext_lazy as _
+from django.utils.translation import gettext, gettext_lazy as _
 
 from common.db.encoder import ModelJSONFieldEncoder
-from common.utils import lazyproperty
+from common.sessions.cache import user_session_manager
+from common.utils import lazyproperty, i18n_trans
 from ops.models import JobExecution
 from orgs.mixins.models import OrgModelMixin, Organization
 from orgs.utils import current_org
+from terminal.models import default_storage
 from .const import (
     OperateChoices,
     ActionChoices,
@@ -25,7 +32,8 @@ __all__ = [
     "ActivityLog",
     "PasswordChangeLog",
     "UserLoginLog",
-    "JobLog"
+    "JobLog",
+    "UserSession"
 ]
 
 
@@ -40,6 +48,8 @@ class JobLog(JobExecution):
 
 
 class FTPLog(OrgModelMixin):
+    upload_to = 'FTP_FILES'
+
     id = models.UUIDField(default=uuid.uuid4, primary_key=True)
     user = models.CharField(max_length=128, verbose_name=_("User"))
     remote_addr = models.CharField(
@@ -52,10 +62,27 @@ class FTPLog(OrgModelMixin):
     )
     filename = models.CharField(max_length=1024, verbose_name=_("Filename"))
     is_success = models.BooleanField(default=True, verbose_name=_("Success"))
-    date_start = models.DateTimeField(auto_now_add=True, verbose_name=_("Date start"))
+    date_start = models.DateTimeField(auto_now_add=True, verbose_name=_("Date start"), db_index=True)
+    has_file = models.BooleanField(default=False, verbose_name=_("File"))
+    session = models.CharField(max_length=36, verbose_name=_("Session"), default=uuid.uuid4)
 
     class Meta:
         verbose_name = _("File transfer log")
+
+    @property
+    def filepath(self):
+        return os.path.join(self.upload_to, self.date_start.strftime('%Y-%m-%d'), str(self.id))
+
+    def save_file_to_storage(self, file):
+        try:
+            name = default_storage.save(self.filepath, file)
+        except OSError as e:
+            return None, e
+
+        if settings.SERVER_REPLAY_STORAGE:
+            from .tasks import upload_ftp_file_to_external_storage
+            upload_ftp_file_to_external_storage.delay(str(self.id), file.name)
+        return name, None
 
 
 class OperateLog(OrgModelMixin):
@@ -130,6 +157,10 @@ class ActivityLog(OrgModelMixin):
         verbose_name = _("Activity log")
         ordering = ('-datetime',)
 
+    def __str__(self):
+        detail = i18n_trans(self.detail)
+        return "{} {}".format(detail, self.resource_id)
+
     def save(self, *args, **kwargs):
         if current_org.is_root() and not self.org_id:
             self.org_id = Organization.ROOT_ID
@@ -158,7 +189,7 @@ class UserLoginLog(models.Model):
     type = models.CharField(
         choices=LoginTypeChoices.choices, max_length=2, verbose_name=_("Login type")
     )
-    ip = models.GenericIPAddressField(verbose_name=_("Login ip"))
+    ip = models.GenericIPAddressField(verbose_name=_("Login IP"))
     city = models.CharField(
         max_length=254, blank=True, null=True, verbose_name=_("Login city")
     )
@@ -176,7 +207,7 @@ class UserLoginLog(models.Model):
         choices=LoginStatusChoices.choices,
         verbose_name=_("Status"),
     )
-    datetime = models.DateTimeField(default=timezone.now, verbose_name=_("Date login"))
+    datetime = models.DateTimeField(default=timezone.now, verbose_name=_("Date login"), db_index=True)
     backend = models.CharField(
         max_length=32, default="", verbose_name=_("Authentication backend")
     )
@@ -223,3 +254,50 @@ class UserLoginLog(models.Model):
     class Meta:
         ordering = ["-datetime", "username"]
         verbose_name = _("User login log")
+
+
+class UserSession(models.Model):
+    _OPERATE_LOG_ACTION = {'delete': ActionChoices.finished}
+
+    id = models.UUIDField(default=uuid.uuid4, primary_key=True)
+    ip = models.GenericIPAddressField(verbose_name=_("Login IP"))
+    key = models.CharField(max_length=128, verbose_name=_("Session key"))
+    city = models.CharField(max_length=254, blank=True, null=True, verbose_name=_("Login city"))
+    user_agent = models.CharField(max_length=254, blank=True, null=True, verbose_name=_("User agent"))
+    type = models.CharField(choices=LoginTypeChoices.choices, max_length=2, verbose_name=_("Login type"))
+    backend = models.CharField(max_length=32, default="", verbose_name=_("Authentication backend"))
+    date_created = models.DateTimeField(null=True, blank=True, verbose_name=_('Date created'))
+    user = models.ForeignKey(
+        'users.User', verbose_name=_('User'), related_name='sessions', on_delete=models.CASCADE
+    )
+
+    def __str__(self):
+        return '%s(%s)' % (self.user, self.ip)
+
+    @property
+    def backend_display(self):
+        return gettext(self.backend)
+
+    @property
+    def is_active(self):
+        return user_session_manager.check_active(self.key)
+
+    @property
+    def date_expired(self):
+        session_store_cls = import_module(settings.SESSION_ENGINE).SessionStore
+        session_store = session_store_cls(session_key=self.key)
+        cache_key = session_store.cache_key
+        ttl = caches[settings.SESSION_CACHE_ALIAS].ttl(cache_key)
+        return timezone.now() + timedelta(seconds=ttl)
+
+    @classmethod
+    def clear_expired_sessions(cls):
+        keys = user_session_manager.get_keys()
+        cls.objects.exclude(key__in=keys).delete()
+
+    class Meta:
+        ordering = ['-date_created']
+        verbose_name = _('User session')
+        permissions = [
+            ('offline_usersession', _('Offline user session')),
+        ]

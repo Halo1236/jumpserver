@@ -1,15 +1,16 @@
-import os
 import json
 
+from django.conf import settings
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import InMemoryUploadedFile
 from django.db import models
 from django.db.utils import ProgrammingError, OperationalError
-from django.utils.translation import ugettext_lazy as _
-from django.conf import settings
-from django.core.files.storage import default_storage
-from django.core.files.base import ContentFile
-from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.utils.translation import gettext_lazy as _
 
-from common.utils import signer, get_logger
+from common.db.models import JMSBaseModel
+from common.utils import get_logger
+from common.db.utils import Encryptor
 
 logger = get_logger(__name__)
 
@@ -51,7 +52,7 @@ class Setting(models.Model):
         try:
             value = self.value
             if self.encrypted:
-                value = signer.unsign(value)
+                value = Encryptor(value).decrypt()
             if not value:
                 return None
             value = json.loads(value)
@@ -64,7 +65,7 @@ class Setting(models.Model):
         try:
             v = json.dumps(item)
             if self.encrypted:
-                v = signer.sign(v)
+                v = Encryptor(v).encrypt()
             self.value = v
         except json.JSONDecodeError as e:
             raise ValueError("Json dump error: {}".format(str(e)))
@@ -160,6 +161,12 @@ class Setting(models.Model):
         permissions = [
             ('change_email', _('Can change email setting')),
             ('change_auth', _('Can change auth setting')),
+            ('change_ops', _('Can change auth ops')),
+            ('change_ticket', _('Can change auth ticket')),
+            ('change_virtualapp', _('Can change virtual app setting')),
+            ('change_announcement', _('Can change auth announcement')),
+            ('change_vault', _('Can change vault setting')),
+            ('change_chatai', _('Can change chat ai setting')),
             ('change_systemmsgsubscription', _('Can change system msg sub setting')),
             ('change_sms', _('Can change sms setting')),
             ('change_security', _('Can change security setting')),
@@ -169,3 +176,15 @@ class Setting(models.Model):
             ('change_terminal', _('Can change terminal setting')),
             ('change_other', _('Can change other setting')),
         ]
+
+
+class ChatPrompt(JMSBaseModel):
+    name = models.CharField(max_length=128, verbose_name=_('Name'), unique=True)
+    content = models.TextField(blank=False, null=False, verbose_name=_('Content'))
+    builtin = models.BooleanField(default=False, verbose_name=_('Builtin'))
+
+    class Meta:
+        verbose_name = _("Chat prompt")
+
+    def __str__(self):
+        return self.name

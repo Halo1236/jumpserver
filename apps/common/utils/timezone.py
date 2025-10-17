@@ -1,22 +1,11 @@
-import pytz
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+
 from django.utils import timezone as dj_timezone
 from rest_framework.fields import DateTimeField
 
-max = datetime.max.replace(tzinfo=timezone.utc)
-
-
-def astimezone(dt: datetime, tzinfo: pytz.tzinfo.DstTzInfo):
-    assert dj_timezone.is_aware(dt)
-    return tzinfo.normalize(dt.astimezone(tzinfo))
-
-
-def as_china_cst(dt: datetime):
-    return astimezone(dt, pytz.timezone('Asia/Shanghai'))
-
 
 def as_current_tz(dt: datetime):
-    return astimezone(dt, dj_timezone.get_current_timezone())
+    return dt.astimezone(dj_timezone.get_current_timezone())
 
 
 def utc_now():
@@ -29,6 +18,10 @@ def local_now():
 
 def local_now_display(fmt='%Y-%m-%d %H:%M:%S'):
     return local_now().strftime(fmt)
+
+
+def local_now_filename():
+    return local_now().strftime('%Y%m%d-%H%M%S')
 
 
 def local_now_date_display(fmt='%Y-%m-%d'):

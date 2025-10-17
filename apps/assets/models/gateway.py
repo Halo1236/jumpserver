@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from assets.const import GATEWAY_NAME
 from assets.models.platform import Platform
@@ -73,3 +73,7 @@ class Gateway(Host):
     def private_key_path(self):
         account = self.select_account
         return account.private_key_path if account else None
+
+    def get_private_key_path(self, path):
+        account = self.select_account
+        return account.get_private_key_path(path) if account else None

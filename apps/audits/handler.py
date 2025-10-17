@@ -1,34 +1,27 @@
+import json
 from datetime import datetime
 
-from django.db import transaction
 from django.core.cache import cache
-from django.utils.translation import ugettext_lazy as _
+from django.db import transaction
+from django.utils.translation import gettext_lazy as _
 
+from common.local import encrypted_field_set
 from common.utils import get_request_ip, get_logger
 from common.utils.timezone import as_current_tz
-from common.utils.encode import Singleton
-from common.local import encrypted_field_set
-from settings.serializers import SettingsSerializer
 from jumpserver.utils import current_request
-from orgs.utils import get_current_org_id
 from orgs.models import Organization
-
+from orgs.utils import get_current_org_id
+from settings.models import Setting
+from settings.serializers import SettingsSerializer
+from users.models import Preference
+from users.serializers import PreferenceSerializer
 from .backends import get_operate_log_storage
-
 
 logger = get_logger(__name__)
 
 
-class OperatorLogHandler(metaclass=Singleton):
+class OperatorLogHandler(object):
     CACHE_KEY = 'OPERATOR_LOG_CACHE_KEY'
-
-    def __init__(self):
-        self.log_client = self.get_storage_client()
-
-    @staticmethod
-    def get_storage_client():
-        client = get_operate_log_storage()
-        return client
 
     @staticmethod
     def _consistent_type_to_str(value1, value2):
@@ -56,7 +49,7 @@ class OperatorLogHandler(metaclass=Singleton):
             return
 
         key = '%s_%s' % (self.CACHE_KEY, instance_id)
-        cache.set(key, instance_dict, 3 * 60)
+        cache.set(key, instance_dict, 3)
 
     def get_instance_dict_from_cache(self, instance_id):
         if instance_id is None:
@@ -73,7 +66,12 @@ class OperatorLogHandler(metaclass=Singleton):
         if instance_id is None:
             return log_id, before, after
 
-        log_id, cache_instance = self.get_instance_dict_from_cache(instance_id)
+        try:
+            log_id, cache_instance = self.get_instance_dict_from_cache(instance_id)
+        except Exception as err:
+            logger.error('Get instance diff from cache error: %s' % err)
+            return log_id, before, after
+
         if not cache_instance:
             return log_id, before, after
 
@@ -83,19 +81,15 @@ class OperatorLogHandler(metaclass=Singleton):
         return log_id, before, after
 
     @staticmethod
-    def get_resource_display_from_setting(resource):
-        resource_display = None
-        setting_serializer = SettingsSerializer()
-        label = setting_serializer.get_field_label(resource)
-        if label is not None:
-            resource_display = label
-        return resource_display
-
-    def get_resource_display(self, resource):
-        resource_display = str(resource)
-        return_value = self.get_resource_display_from_setting(resource_display)
-        if return_value is not None:
-            resource_display = return_value
+    def get_resource_display(resource):
+        if isinstance(resource, Setting):
+            serializer = SettingsSerializer()
+            resource_display = serializer.get_field_label(resource.name)
+        elif isinstance(resource, Preference):
+            serializer = PreferenceSerializer()
+            resource_display = serializer.get_field_label(resource.name)
+        else:
+            resource_display = str(resource)
         return resource_display
 
     @staticmethod
@@ -104,7 +98,7 @@ class OperatorLogHandler(metaclass=Singleton):
             return ''
         if isinstance(value[0], str):
             return ','.join(value)
-        return ','.join([i['value'] for i in value if i.get('value')])
+        return json.dumps(value)
 
     def __data_processing(self, dict_item, loop=True):
         encrypt_value = '******'
@@ -161,13 +155,8 @@ class OperatorLogHandler(metaclass=Singleton):
             'remote_addr': remote_addr, 'before': before, 'after': after,
         }
         with transaction.atomic():
-            if self.log_client.ping(timeout=1):
-                client = self.log_client
-            else:
-                logger.info('Switch default operate log storage save.')
-                client = get_operate_log_storage(default=True)
-
             try:
+                client = get_operate_log_storage()
                 client.save(**data)
             except Exception as e:
                 error_msg = 'An error occurred saving OperateLog.' \

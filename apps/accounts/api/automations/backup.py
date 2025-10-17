@@ -18,16 +18,15 @@ __all__ = [
 
 class AccountBackupPlanViewSet(OrgBulkModelViewSet):
     model = AccountBackupAutomation
-    filter_fields = ('name',)
-    search_fields = filter_fields
-    ordering = ('name',)
+    filterset_fields = ('name',)
+    search_fields = filterset_fields
     serializer_class = serializers.AccountBackupSerializer
 
 
 class AccountBackupPlanExecutionViewSet(viewsets.ModelViewSet):
     serializer_class = serializers.AccountBackupPlanExecutionSerializer
-    search_fields = ('trigger',)
-    filterset_fields = ('trigger', 'plan_id')
+    search_fields = ('trigger', 'plan__name')
+    filterset_fields = ('trigger', 'plan_id', 'plan__name')
     http_method_names = ['get', 'post', 'options']
 
     def get_queryset(self):

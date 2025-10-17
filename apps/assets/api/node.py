@@ -3,7 +3,7 @@ from collections import namedtuple, defaultdict
 from functools import partial
 
 from django.db.models.signals import m2m_changed
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.generics import get_object_or_404
@@ -22,6 +22,7 @@ from orgs.utils import current_org
 from rbac.permissions import RBACPermission
 from .. import serializers
 from ..models import Node
+from ..signal_handlers import update_nodes_assets_amount
 from ..tasks import (
     update_node_assets_hardware_info_manual,
     test_node_assets_connectivity_manual,
@@ -94,6 +95,7 @@ class NodeAddChildrenApi(generics.UpdateAPIView):
         children = Node.objects.filter(id__in=node_ids)
         for node in children:
             node.parent = instance
+        update_nodes_assets_amount.delay(ttl=5, node_ids=(instance.id,))
         return Response("OK")
 
 

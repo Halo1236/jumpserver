@@ -7,6 +7,8 @@ class DatabaseTypes(BaseType):
     POSTGRESQL = 'postgresql', 'PostgreSQL'
     ORACLE = 'oracle', 'Oracle'
     SQLSERVER = 'sqlserver', 'SQLServer'
+    DB2 = 'db2', 'DB2'
+    DAMENG = 'dameng', 'Dameng'
     CLICKHOUSE = 'clickhouse', 'ClickHouse'
     MONGODB = 'mongodb', 'MongoDB'
     REDIS = 'redis', 'Redis'
@@ -35,8 +37,27 @@ class DatabaseTypes(BaseType):
                 'verify_account_enabled': True,
                 'change_secret_enabled': True,
                 'push_account_enabled': True,
+                'remove_account_enabled': True,
             },
             cls.REDIS: {
+                'ansible_enabled': False,
+                'ping_enabled': False,
+                'gather_facts_enabled': False,
+                'gather_accounts_enabled': False,
+                'verify_account_enabled': False,
+                'change_secret_enabled': False,
+                'push_account_enabled': False,
+            },
+            cls.DB2: {
+                'ansible_enabled': False,
+                'ping_enabled': False,
+                'gather_facts_enabled': False,
+                'gather_accounts_enabled': False,
+                'verify_account_enabled': False,
+                'change_secret_enabled': False,
+                'push_account_enabled': False,
+            },
+            cls.DAMENG: {
                 'ansible_enabled': False,
                 'ping_enabled': False,
                 'gather_facts_enabled': False,
@@ -73,6 +94,8 @@ class DatabaseTypes(BaseType):
             cls.POSTGRESQL: [{'name': 'PostgreSQL'}],
             cls.ORACLE: [{'name': 'Oracle'}],
             cls.SQLSERVER: [{'name': 'SQLServer'}],
+            cls.DB2: [{'name': 'DB2'}],
+            cls.DAMENG: [{'name': 'Dameng'}],
             cls.CLICKHOUSE: [{'name': 'ClickHouse'}],
             cls.MONGODB: [{'name': 'MongoDB'}],
             cls.REDIS: [

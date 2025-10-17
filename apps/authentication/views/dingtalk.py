@@ -1,10 +1,11 @@
 from urllib.parse import urlencode
 
 from django.conf import settings
+from django.contrib.auth import logout as auth_logout
 from django.db.utils import IntegrityError
 from django.http.request import HttpRequest
 from django.http.response import HttpResponseRedirect
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 from django.views import View
 from rest_framework.exceptions import APIException
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -13,16 +14,15 @@ from authentication import errors
 from authentication.const import ConfirmType
 from authentication.mixins import AuthMixin
 from authentication.notifications import OAuthBindMessage
-from common.views.mixins import PermissionsMixin, UserConfirmRequiredExceptionMixin
-from common.permissions import UserConfirmation
+from authentication.permissions import UserConfirmation
 from common.sdk.im.dingtalk import URL, DingTalk
 from common.utils import get_logger
 from common.utils.common import get_request_ip
-from common.utils.django import get_object_or_none, reverse
+from common.utils.django import get_object_or_none, reverse, safe_next_url
 from common.utils.random import random_string
+from common.views.mixins import PermissionsMixin, UserConfirmRequiredExceptionMixin
 from users.models import User
 from users.views import UserVerifyPasswordView
-
 from .base import BaseLoginCallbackView
 from .mixins import METAMixin, FlashMessageMixin
 
@@ -47,15 +47,7 @@ class DingTalkBaseMixin(UserConfirmRequiredExceptionMixin, PermissionsMixin, Fla
             )
 
     def verify_state(self):
-        state = self.request.GET.get('state')
-        session_state = self.request.session.get(DINGTALK_STATE_SESSION_KEY)
-        if state != session_state:
-            return False
-        return True
-
-    def get_verify_state_failed_response(self, redirect_uri):
-        msg = _("The system configuration is incorrect. Please contact your administrator")
-        return self.get_failed_response(redirect_uri, msg, msg)
+        return self.verify_state_with_session_key(DINGTALK_STATE_SESSION_KEY)
 
     def get_already_bound_response(self, redirect_url):
         msg = _('DingTalk is already bound')
@@ -70,11 +62,12 @@ class DingTalkQRMixin(DingTalkBaseMixin, View):
         self.request.session[DINGTALK_STATE_SESSION_KEY] = state
 
         params = {
-            'appid': settings.DINGTALK_APPKEY,
+            'client_id': settings.DINGTALK_APPKEY,
             'response_type': 'code',
-            'scope': 'snsapi_login',
+            'scope': 'openid',
             'state': state,
             'redirect_uri': redirect_uri,
+            'prompt': 'consent'
         }
         url = URL.QR_CONNECT + '?' + urlencode(params)
         return url
@@ -100,7 +93,7 @@ class DingTalkOAuthMixin(DingTalkBaseMixin, View):
 
 
 class DingTalkQRBindView(DingTalkQRMixin, View):
-    permission_classes = (IsAuthenticated, UserConfirmation.require(ConfirmType.ReLogin))
+    permission_classes = (IsAuthenticated, UserConfirmation.require(ConfirmType.RELOGIN))
 
     def get(self, request: HttpRequest):
         user = request.user
@@ -159,6 +152,7 @@ class DingTalkQRBindCallbackView(DingTalkQRMixin, View):
         ip = get_request_ip(request)
         OAuthBindMessage(user, ip, _('DingTalk'), user_id).publish_async()
         msg = _('Binding DingTalk successfully')
+        auth_logout(request)
         response = self.get_success_response(redirect_url, msg, msg)
         return response
 
@@ -184,6 +178,7 @@ class DingTalkQRLoginView(DingTalkQRMixin, METAMixin, View):
     def get(self, request: HttpRequest):
         redirect_url = request.GET.get('redirect_url') or reverse('index')
         next_url = self.get_next_url_from_meta() or reverse('index')
+        next_url = safe_next_url(next_url, request=request)
 
         redirect_uri = reverse('authentication:dingtalk-qr-login-callback', external=True)
         redirect_uri += '?' + urlencode({

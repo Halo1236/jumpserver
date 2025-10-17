@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 #
-from django.utils.translation import ugettext_lazy as _
 from django.conf import settings
+from django.utils.translation import gettext_lazy as _
 
 from users.utils import LoginBlockUtil, MFABlockUtils, LoginIpBlockUtil
-from ..signals import post_auth_failed
 from . import const
+from ..signals import post_auth_failed
 
 
 class AuthFailedNeedLogMixin:
@@ -50,6 +50,10 @@ class AuthFailedError(Exception):
 
     def __str__(self):
         return str(self.msg)
+
+
+class SSOAuthKeyTTLError(Exception):
+    msg = 'sso_authkey_timeout'
 
 
 class BlockGlobalIpLoginError(AuthFailedError):

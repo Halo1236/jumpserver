@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 #
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from accounts.const import (
-    AutomationTypes, DEFAULT_PASSWORD_RULES,
-    SecretType, SecretStrategy, SSHKeyStrategy
+    AutomationTypes, SecretType, SecretStrategy,
+    SSHKeyStrategy, ChangeSecretRecordStatusChoice
 )
 from accounts.models import (
     Account, ChangeSecretAutomation,
     ChangeSecretRecord, AutomationExecution
 )
-from accounts.serializers import AuthValidateMixin
+from accounts.serializers import AuthValidateMixin, PasswordRulesSerializer
 from assets.models import Asset
 from common.serializers.fields import LabeledChoiceField, ObjectRelatedField
 from common.utils import get_logger
@@ -22,6 +22,7 @@ logger = get_logger(__file__)
 __all__ = [
     'ChangeSecretAutomationSerializer',
     'ChangeSecretRecordSerializer',
+    'ChangeSecretRecordViewSecretSerializer',
     'ChangeSecretRecordBackUpSerializer',
     'ChangeSecretUpdateAssetSerializer',
     'ChangeSecretUpdateNodeSerializer',
@@ -42,7 +43,7 @@ class ChangeSecretAutomationSerializer(AuthValidateMixin, BaseAutomationSerializ
     ssh_key_change_strategy = LabeledChoiceField(
         choices=SSHKeyStrategy.choices, required=False, label=_('SSH Key strategy')
     )
-    password_rules = serializers.DictField(default=DEFAULT_PASSWORD_RULES)
+    password_rules = PasswordRulesSerializer(required=False, label=_('Password rules'))
     secret_type = LabeledChoiceField(choices=get_secret_types(), required=True, label=_('Secret type'))
 
     class Meta:
@@ -50,7 +51,7 @@ class ChangeSecretAutomationSerializer(AuthValidateMixin, BaseAutomationSerializ
         read_only_fields = BaseAutomationSerializer.Meta.read_only_fields
         fields = BaseAutomationSerializer.Meta.fields + read_only_fields + [
             'secret_type', 'secret_strategy', 'secret', 'password_rules',
-            'ssh_key_change_strategy', 'passphrase', 'recipients',
+            'ssh_key_change_strategy', 'passphrase', 'recipients', 'params'
         ]
         extra_kwargs = {**BaseAutomationSerializer.Meta.extra_kwargs, **{
             'accounts': {'required': True},
@@ -72,7 +73,6 @@ class ChangeSecretAutomationSerializer(AuthValidateMixin, BaseAutomationSerializ
             return password_rules
 
         length = password_rules.get('length')
-        symbol_set = password_rules.get('symbol_set', '')
 
         try:
             length = int(length)
@@ -85,10 +85,6 @@ class ChangeSecretAutomationSerializer(AuthValidateMixin, BaseAutomationSerializ
             msg = _('* Password length range 6-30 bits')
             raise serializers.ValidationError(msg)
 
-        if not isinstance(symbol_set, str):
-            symbol_set = str(symbol_set)
-
-        password_rules = {'length': length, 'symbol_set': ''.join(symbol_set)}
         return password_rules
 
     def validate(self, attrs):
@@ -110,7 +106,10 @@ class ChangeSecretAutomationSerializer(AuthValidateMixin, BaseAutomationSerializ
 class ChangeSecretRecordSerializer(serializers.ModelSerializer):
     is_success = serializers.SerializerMethodField(label=_('Is success'))
     asset = ObjectRelatedField(queryset=Asset.objects, label=_('Asset'))
-    account = ObjectRelatedField(queryset=Account.objects, label=_('Account'))
+    account = ObjectRelatedField(
+        queryset=Account.objects, label=_('Account'),
+        attrs=("id", "name", "username")
+    )
     execution = ObjectRelatedField(
         queryset=AutomationExecution.objects, label=_('Automation task execution')
     )
@@ -118,14 +117,23 @@ class ChangeSecretRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChangeSecretRecord
         fields = [
-            'id', 'asset', 'account', 'date_started', 'date_finished',
-            'timedelta', 'is_success', 'error', 'execution',
+            'id', 'asset', 'account', 'date_finished',
+            'status', 'is_success', 'error', 'execution',
         ]
         read_only_fields = fields
 
     @staticmethod
     def get_is_success(obj):
-        return obj.status == 'success'
+        return obj.status == ChangeSecretRecordStatusChoice.success.value
+
+
+class ChangeSecretRecordViewSecretSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChangeSecretRecord
+        fields = [
+            'id', 'old_secret', 'new_secret',
+        ]
+        read_only_fields = fields
 
 
 class ChangeSecretRecordBackUpSerializer(serializers.ModelSerializer):
@@ -151,7 +159,7 @@ class ChangeSecretRecordBackUpSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_is_success(obj):
-        if obj.status == 'success':
+        if obj.status == ChangeSecretRecordStatusChoice.success.value:
             return _("Success")
         return _("Failed")
 

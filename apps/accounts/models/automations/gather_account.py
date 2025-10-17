@@ -1,6 +1,6 @@
 from django.db import models
 from django.db.models import Q
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from accounts.const import AutomationTypes, Source
 from accounts.models import Account
@@ -55,11 +55,15 @@ class GatherAccountsAutomation(AccountBaseAutomation):
     is_sync_account = models.BooleanField(
         default=False, blank=True, verbose_name=_("Is sync account")
     )
+    recipients = models.ManyToManyField('users.User', verbose_name=_("Recipient"), blank=True)
 
     def to_attr_json(self):
         attr_json = super().to_attr_json()
         attr_json.update({
             'is_sync_account': self.is_sync_account,
+            'recipients': [
+                str(recipient.id) for recipient in self.recipients.all()
+            ]
         })
         return attr_json
 

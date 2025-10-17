@@ -1,8 +1,8 @@
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from common.serializers.fields import LabeledChoiceField
 from common.serializers import BulkModelSerializer
+from common.serializers.fields import LabeledChoiceField
 from common.utils import get_request_ip, pretty_string, is_uuid
 from users.serializers import ServiceAccountSerializer
 from .. import const
@@ -30,6 +30,12 @@ class StatSerializer(serializers.ModelSerializer):
             "memory_used": {'default': 0},
             "disk_used": {'default': 0},
         }
+
+
+class TerminalSmallSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Terminal
+        fields = ['id', 'name', 'type']
 
 
 class TerminalSerializer(BulkModelSerializer):
@@ -141,3 +147,8 @@ class ConnectMethodSerializer(serializers.Serializer):
     type = serializers.CharField(max_length=128)
     endpoint_protocol = serializers.CharField(max_length=128)
     component = serializers.CharField(max_length=128)
+
+
+class EncryptedConfigSerializer(serializers.Serializer):
+    secret_encrypt_key = serializers.CharField(max_length=128)
+    encrypted_value = serializers.CharField(max_length=128)

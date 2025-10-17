@@ -2,7 +2,7 @@ import uuid
 
 from celery import current_task
 from django.db import models
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from assets.models.asset import Asset
 from assets.models.node import Node
@@ -15,7 +15,7 @@ from orgs.mixins.models import OrgModelMixin, JMSOrgBaseModel
 
 class BaseAutomation(PeriodTaskModelMixin, JMSOrgBaseModel):
     accounts = models.JSONField(default=list, verbose_name=_("Accounts"))
-    nodes = models.ManyToManyField('assets.Node', blank=True, verbose_name=_("Nodes"))
+    nodes = models.ManyToManyField('assets.Node', blank=True, verbose_name=_("Node"))
     assets = models.ManyToManyField('assets.Asset', blank=True, verbose_name=_("Assets"))
     type = models.CharField(max_length=16, verbose_name=_('Type'))
     is_active = models.BooleanField(default=True, verbose_name=_("Is active"))
@@ -123,7 +123,7 @@ class AutomationExecution(OrgModelMixin):
     )
 
     class Meta:
-        ordering = ('-date_start',)
+        ordering = ('org_id', '-date_start',)
         verbose_name = _('Automation task execution')
 
     @property

@@ -1,12 +1,12 @@
 from typing import Iterable, AnyStr
 
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import APIException
 
-from users.utils import construct_user_email
-from common.utils.common import get_logger
-from common.sdk.im.utils import digest, update_values
 from common.sdk.im.mixin import RequestMixin, BaseRequest
+from common.sdk.im.utils import digest, update_values
+from common.utils.common import get_logger
+from users.utils import construct_user_email
 
 logger = get_logger(__name__)
 
@@ -19,7 +19,7 @@ class WeComError(APIException):
 class URL:
     GET_TOKEN = 'https://qyapi.weixin.qq.com/cgi-bin/gettoken'
     SEND_MESSAGE = 'https://qyapi.weixin.qq.com/cgi-bin/message/send'
-    QR_CONNECT = 'https://open.work.weixin.qq.com/wwopen/sso/qrConnect'
+    QR_CONNECT = 'https://login.work.weixin.qq.com/wwlogin/sso/login'
     OAUTH_CONNECT = 'https://open.weixin.qq.com/connect/oauth2/authorize'
 
     # https://open.work.weixin.qq.com/api/doc/90000/90135/91437
@@ -112,13 +112,13 @@ class WeCom(RequestMixin):
         update_values(extra_params, kwargs)
 
         body = {
-           "touser": '|'.join(users),
-           "msgtype": "text",
-           "agentid": self._agentid,
-           "text": {
-               "content": msg
-           },
-           **extra_params
+            "touser": '|'.join(users),
+            "msgtype": "text",
+            "agentid": self._agentid,
+            "text": {
+                "content": msg
+            },
+            **extra_params
         }
         if markdown:
             body['msgtype'] = 'markdown'
@@ -184,4 +184,3 @@ class WeCom(RequestMixin):
         return {
             'username': username, 'name': name, 'email': email
         }
-

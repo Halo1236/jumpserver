@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
 #
-import re
-from django.templatetags.static import static
-from collections import OrderedDict
-from itertools import chain
-import logging
 import datetime
-import uuid
-from functools import wraps
-import time
 import ipaddress
-import psutil
-import platform
+import logging
 import os
+import platform
+import re
 import socket
+import time
+import uuid
+from collections import OrderedDict
+from functools import wraps
+from itertools import chain
 
+import psutil
 from django.conf import settings
+from django.templatetags.static import static
+
+from common.permissions import ServiceAccountSignaturePermission
 
 UUID_PATTERN = re.compile(r'\w{8}(-\w{4}){3}-\w{12}')
 ipip_db = None
@@ -76,6 +78,7 @@ def setattr_bulk(seq, key, value):
     def set_attr(obj):
         setattr(obj, key, value)
         return obj
+
     return map(set_attr, seq)
 
 
@@ -97,12 +100,12 @@ def capacity_convert(size, expect='auto', rate=1000):
     rate_mapping = (
         ('K', rate),
         ('KB', rate),
-        ('M', rate**2),
-        ('MB', rate**2),
-        ('G', rate**3),
-        ('GB', rate**3),
-        ('T', rate**4),
-        ('TB', rate**4),
+        ('M', rate ** 2),
+        ('MB', rate ** 2),
+        ('G', rate ** 3),
+        ('GB', rate ** 3),
+        ('T', rate ** 4),
+        ('TB', rate ** 4),
     )
 
     rate_mapping = OrderedDict(rate_mapping)
@@ -117,7 +120,7 @@ def capacity_convert(size, expect='auto', rate=1000):
 
     if expect == 'auto':
         for unit, rate_ in rate_mapping.items():
-            if rate > std_size/rate_ >= 1 or unit == "T":
+            if rate > std_size / rate_ >= 1 or unit == "T":
                 expect = unit
                 break
 
@@ -153,18 +156,21 @@ def is_uuid(seq):
 
 def get_request_ip(request):
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')
-
     if x_forwarded_for and x_forwarded_for[0]:
         login_ip = x_forwarded_for[0]
-    else:
-        login_ip = request.META.get('REMOTE_ADDR', '')
+        return login_ip
+
+    login_ip = request.META.get('REMOTE_ADDR', '')
     return login_ip
 
 
 def get_request_ip_or_data(request):
     ip = ''
-    if hasattr(request, 'data'):
-        ip = request.data.get('remote_addr', '')
+
+    if hasattr(request, 'data') and isinstance(request.data, dict) and request.data.get('remote_addr', ''):
+        permission = ServiceAccountSignaturePermission()
+        if permission.has_permission(request, None):
+            ip = request.data.get('remote_addr', '')
     ip = ip or get_request_ip(request)
     return ip
 
@@ -195,6 +201,7 @@ def with_cache(func):
         res = func(*args, **kwargs)
         cache[key] = res
         return res
+
     return wrapper
 
 
@@ -213,9 +220,10 @@ def timeit(func):
         now = time.time()
         result = func(*args, **kwargs)
         using = (time.time() - now) * 1000
-        msg = "End call {}, using: {:.1f}ms".format(name, using)
+        msg = "Ends  call: {}, using: {:.1f}ms".format(name, using)
         logger.debug(msg)
         return result
+
     return wrapper
 
 
@@ -310,7 +318,7 @@ class Time:
     def print(self):
         last, *timestamps = self._timestamps
         for timestamp, msg in zip(timestamps, self._msgs):
-            logger.debug(f'TIME_IT: {msg} {timestamp-last}')
+            logger.debug(f'TIME_IT: {msg} {timestamp - last}')
             last = timestamp
 
 
@@ -367,7 +375,7 @@ def pretty_string(data, max_length=128, ellipsis_str='...'):
 
 
 def group_by_count(it, count):
-    return [it[i:i+count] for i in range(0, len(it), count)]
+    return [it[i:i + count] for i in range(0, len(it), count)]
 
 
 def test_ip_connectivity(host, port, timeout=0.5):
@@ -395,3 +403,17 @@ def static_or_direct(logo_path):
 def make_dirs(name, mode=0o755, exist_ok=False):
     """ 默认权限设置为 0o755 """
     return os.makedirs(name, mode=mode, exist_ok=exist_ok)
+
+
+def distinct(seq, key=None):
+    if key is None:
+        # 如果未提供关键字参数，则默认使用元素本身作为比较键
+        key = lambda x: x
+    seen = set()
+    result = []
+    for item in seq:
+        k = key(item)
+        if k not in seen:
+            seen.add(k)
+            result.append(item)
+    return result

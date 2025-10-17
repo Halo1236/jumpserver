@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 #
+from collections import defaultdict
+
 import django_filters
-from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext as _
+from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.status import HTTP_200_OK
@@ -11,15 +13,14 @@ from rest_framework.status import HTTP_200_OK
 from accounts.tasks import push_accounts_to_assets_task, verify_accounts_connectivity_task
 from assets import serializers
 from assets.exceptions import NotSupportedTemporarilyError
-from assets.filters import IpInFilterBackend, LabelFilterBackend, NodeFilterBackend
-from assets.models import Asset, Gateway, Platform
+from assets.filters import IpInFilterBackend, NodeFilterBackend
+from assets.models import Asset, Gateway, Platform, Protocol
 from assets.tasks import test_assets_connectivity_manual, update_assets_hardware_info_manual
 from common.api import SuggestionMixin
-from common.drf.filters import BaseFilterSet
+from common.drf.filters import BaseFilterSet, AttrRulesFilterBackend
 from common.utils import get_logger, is_uuid
 from orgs.mixins import generics
 from orgs.mixins.api import OrgBulkModelViewSet
-from ..mixin import NodeFilterMixin
 from ...notifications import BulkUpdatePlatformSkipAssetUserMsg
 
 logger = get_logger(__file__)
@@ -30,11 +31,12 @@ __all__ = [
 
 
 class AssetFilterSet(BaseFilterSet):
-    labels = django_filters.CharFilter(method='filter_labels')
     platform = django_filters.CharFilter(method='filter_platform')
+    exclude_platform = django_filters.CharFilter(field_name="platform__name", lookup_expr='exact', exclude=True)
     domain = django_filters.CharFilter(method='filter_domain')
     type = django_filters.CharFilter(field_name="platform__type", lookup_expr="exact")
     category = django_filters.CharFilter(field_name="platform__category", lookup_expr="exact")
+    protocols = django_filters.CharFilter(method='filter_protocols')
     domain_enabled = django_filters.BooleanFilter(
         field_name="platform__domain_enabled", lookup_expr="exact"
     )
@@ -60,7 +62,7 @@ class AssetFilterSet(BaseFilterSet):
     class Meta:
         model = Asset
         fields = [
-            "id", "name", "address", "is_active", "labels",
+            "id", "name", "address", "is_active",
             "type", "category", "platform",
         ]
 
@@ -79,24 +81,19 @@ class AssetFilterSet(BaseFilterSet):
             return queryset.filter(domain__name__contains=value)
 
     @staticmethod
-    def filter_labels(queryset, name, value):
-        if ':' in value:
-            n, v = value.split(':', 1)
-            queryset = queryset.filter(labels__name=n, labels__value=v)
-        else:
-            q = Q(labels__name__contains=value) | Q(labels__value__contains=value)
-            queryset = queryset.filter(q)
-        return queryset
+    def filter_protocols(queryset, name, value):
+        value = value.split(',')
+        return queryset.filter(protocols__name__in=value).distinct()
 
 
-class AssetViewSet(SuggestionMixin, NodeFilterMixin, OrgBulkModelViewSet):
+class AssetViewSet(SuggestionMixin, OrgBulkModelViewSet):
     """
     API endpoint that allows Asset to be viewed or edited.
     """
     model = Asset
     filterset_class = AssetFilterSet
-    search_fields = ("name", "address")
-    ordering_fields = ('name', 'connectivity', 'platform', 'date_updated')
+    search_fields = ("name", "address", "comment")
+    ordering_fields = ('name', 'address', 'connectivity', 'platform', 'date_updated', 'date_created')
     serializer_classes = (
         ("default", serializers.AssetSerializer),
         ("platform", serializers.PlatformSerializer),
@@ -109,8 +106,18 @@ class AssetViewSet(SuggestionMixin, NodeFilterMixin, OrgBulkModelViewSet):
         ("gateways", "assets.view_gateway"),
         ("spec_info", "assets.view_asset"),
         ("gathered_info", "assets.view_asset"),
+        ("sync_platform_protocols", "assets.change_asset"),
     )
-    extra_filter_backends = [LabelFilterBackend, IpInFilterBackend, NodeFilterBackend]
+    extra_filter_backends = [
+        IpInFilterBackend,
+        NodeFilterBackend, AttrRulesFilterBackend
+    ]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if queryset.model is not Asset:
+            queryset = queryset.select_related('asset_ptr')
+        return queryset
 
     def get_serializer_class(self):
         cls = super().get_serializer_class()
@@ -134,6 +141,39 @@ class AssetViewSet(SuggestionMixin, NodeFilterMixin, OrgBulkModelViewSet):
         else:
             gateways = asset.domain.gateways
         return self.get_paginated_response_from_queryset(gateways)
+
+    @action(methods=['post'], detail=False, url_path='sync-platform-protocols')
+    def sync_platform_protocols(self, request, *args, **kwargs):
+        platform_id = request.data.get('platform_id')
+        platform = get_object_or_404(Platform, pk=platform_id)
+        assets = platform.assets.all()
+
+        platform_protocols = {
+            p['name']: p['port']
+            for p in platform.protocols.values('name', 'port')
+        }
+        asset_protocols_map = defaultdict(set)
+        protocols = assets.prefetch_related('protocols').values_list(
+            'id', 'protocols__name'
+        )
+        for asset_id, protocol in protocols:
+            asset_id = str(asset_id)
+            asset_protocols_map[asset_id].add(protocol)
+        objs = []
+        for asset_id, protocols in asset_protocols_map.items():
+            protocol_names = set(platform_protocols) - protocols
+            if not protocol_names:
+                continue
+            for name in protocol_names:
+                objs.append(
+                    Protocol(
+                        name=name,
+                        port=platform_protocols[name],
+                        asset_id=asset_id,
+                    )
+                )
+        Protocol.objects.bulk_create(objs)
+        return Response(status=status.HTTP_200_OK)
 
     def create(self, request, *args, **kwargs):
         if request.path.find('/api/v1/assets/assets/') > -1:
@@ -252,6 +292,7 @@ class AssetsTaskCreateApi(AssetsTaskMixin, generics.CreateAPIView):
     def check_permissions(self, request):
         action_perm_require = {
             "refresh": "assets.refresh_assethardwareinfo",
+            "test": "assets.test_assetconnectivity",
         }
         _action = request.data.get("action")
         perm_required = action_perm_require.get(_action)

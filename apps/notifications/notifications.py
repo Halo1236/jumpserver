@@ -1,17 +1,17 @@
-import traceback
-from html2text import HTML2Text
-from typing import Iterable
-from itertools import chain
 import textwrap
+import traceback
+from itertools import chain
+from typing import Iterable
 
 from celery import shared_task
 from django.utils.translation import gettext_lazy as _
+from html2text import HTML2Text
 
-from common.utils.timezone import local_now
 from common.utils import lazyproperty
+from common.utils.timezone import local_now
+from notifications.backends import BACKEND
 from settings.utils import get_login_title
 from users.models import User
-from notifications.backends import BACKEND
 from .models import SystemMsgSubscription, UserMsgSubscription
 
 __all__ = ('SystemMessage', 'UserMessage', 'system_msgs', 'Message')
@@ -194,13 +194,19 @@ class Message(metaclass=MessageType):
         return self.markdown_msg
 
     def get_feishu_msg(self) -> dict:
-        return self.text_msg
+        return self.markdown_msg
+
+    def get_lark_msg(self) -> dict:
+        return self.markdown_msg
 
     def get_email_msg(self) -> dict:
         return self.html_msg_with_sign
 
     def get_site_msg_msg(self) -> dict:
         return self.html_msg
+
+    def get_slack_msg(self) -> dict:
+        return self.markdown_msg
 
     def get_sms_msg(self) -> dict:
         return self.text_msg_with_sign

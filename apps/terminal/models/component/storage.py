@@ -7,7 +7,7 @@ from importlib import import_module
 import jms_storage
 from django.conf import settings
 from django.db import models
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from common.db.fields import EncryptJsonDictTextField
 from common.db.models import JMSBaseModel
@@ -161,6 +161,10 @@ class ReplayStorage(CommonStorageModelMixin, JMSBaseModel):
     @property
     def type_swift(self):
         return self.type == const.ReplayStorageType.swift.value
+
+    @property
+    def type_sftp(self):
+        return self.type == const.ReplayStorageType.sftp.value
 
     @property
     def type_ceph(self):

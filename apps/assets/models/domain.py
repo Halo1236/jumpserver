@@ -3,9 +3,10 @@
 import random
 
 from django.db import models
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from common.utils import get_logger
+from labels.mixins import LabeledMixin
 from orgs.mixins.models import JMSOrgBaseModel
 from .gateway import Gateway
 
@@ -14,7 +15,7 @@ logger = get_logger(__file__)
 __all__ = ['Domain']
 
 
-class Domain(JMSOrgBaseModel):
+class Domain(LabeledMixin, JMSOrgBaseModel):
     name = models.CharField(max_length=128, verbose_name=_('Name'))
 
     class Meta:

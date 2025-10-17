@@ -1,6 +1,6 @@
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 
 from assets.models import Asset
 from common.db.fields import PortField
@@ -20,6 +20,7 @@ class Endpoint(JMSBaseModel):
     mariadb_port = PortField(default=33062, verbose_name=_('MariaDB port'))
     postgresql_port = PortField(default=54320, verbose_name=_('PostgreSQL port'))
     redis_port = PortField(default=63790, verbose_name=_('Redis port'))
+    sqlserver_port = PortField(default=14330, verbose_name=_('SQLServer port'))
 
     comment = models.TextField(default='', blank=True, verbose_name=_('Comment'))
 
@@ -34,11 +35,15 @@ class Endpoint(JMSBaseModel):
 
     def get_port(self, target_instance, protocol):
         from terminal.utils import db_port_manager
-        from assets.const import DatabaseTypes
+        from assets.const import DatabaseTypes, Protocol
+
         if isinstance(target_instance, Asset) and \
-                target_instance.is_type(DatabaseTypes.ORACLE):
+                target_instance.is_type(DatabaseTypes.ORACLE) and \
+                protocol == Protocol.oracle:
             port = db_port_manager.get_port_by_db(target_instance)
         else:
+            if protocol in [Protocol.sftp, Protocol.telnet]:
+                protocol = Protocol.ssh
             port = getattr(self, f'{protocol}_port', 0)
         return port
 
@@ -53,7 +58,7 @@ class Endpoint(JMSBaseModel):
     def is_valid_for(self, target_instance, protocol):
         if self.is_default():
             return True
-        if self.host and self.get_port(target_instance, protocol) != 0:
+        if self.get_port(target_instance, protocol) != 0:
             return True
         return False
 
@@ -70,19 +75,33 @@ class Endpoint(JMSBaseModel):
         return endpoint
 
     @classmethod
-    def match_by_instance_label(cls, instance, protocol):
+    def handle_endpoint_host(cls, endpoint, request=None):
+        if not endpoint.host and request:
+            # 动态添加 current request host
+            host_port = request.get_host()
+            # IPv6
+            if host_port.startswith('['):
+                host = host_port.split(']:')[0].rstrip(']') + ']'
+            else:
+                host = host_port.split(':')[0]
+            endpoint.host = host
+        return endpoint
+
+    @classmethod
+    def match_by_instance_label(cls, instance, protocol, request=None):
         from assets.models import Asset
         from terminal.models import Session
         if isinstance(instance, Session):
             instance = instance.get_asset()
         if not isinstance(instance, Asset):
             return None
-        values = instance.labels.filter(name='endpoint').values_list('value', flat=True)
+        values = instance.labels.filter(label__name='endpoint').values_list('label__value', flat=True)
         if not values:
             return None
-        endpoints = cls.objects.filter(name__in=values).order_by('-date_updated')
+        endpoints = cls.objects.filter(name__in=list(values)).order_by('-date_updated')
         for endpoint in endpoints:
             if endpoint.is_valid_for(instance, protocol):
+                endpoint = cls.handle_endpoint_host(endpoint, request)
                 return endpoint
 
 
@@ -98,17 +117,18 @@ class EndpointRule(JMSBaseModel):
         on_delete=models.SET_NULL, verbose_name=_("Endpoint"),
     )
     comment = models.TextField(default='', blank=True, verbose_name=_('Comment'))
+    is_active = models.BooleanField(default=True, verbose_name=_('Is active'))
 
     class Meta:
         verbose_name = _('Endpoint rule')
-        ordering = ('priority', 'name')
+        ordering = ('priority', 'is_active', 'name')
 
     def __str__(self):
         return f'{self.name}({self.priority})'
 
     @classmethod
     def match(cls, target_instance, target_ip, protocol):
-        for endpoint_rule in cls.objects.all().prefetch_related('endpoint'):
+        for endpoint_rule in cls.objects.prefetch_related('endpoint').filter(is_active=True):
             if not contains_ip(target_ip, endpoint_rule.ip_group):
                 continue
             if not endpoint_rule.endpoint:
@@ -124,7 +144,5 @@ class EndpointRule(JMSBaseModel):
             endpoint = endpoint_rule.endpoint
         else:
             endpoint = Endpoint.get_or_create_default(request)
-        if not endpoint.host and request:
-            # 动态添加 current request host
-            endpoint.host = request.get_host().split(':')[0]
+        endpoint = Endpoint.handle_endpoint_host(endpoint, request)
         return endpoint

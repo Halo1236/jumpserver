@@ -1,13 +1,13 @@
 from django.shortcuts import get_object_or_404
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import gettext_lazy as _
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from assets.models import Asset
+from authentication.permissions import IsValidUserOrConnectionToken
 from common.api import JMSBulkModelViewSet
-from common.permissions import IsValidUserOrConnectionToken
 from orgs.utils import tmp_to_root_org
 from terminal import serializers
 from terminal.models import Session, Endpoint, EndpointRule
@@ -42,7 +42,7 @@ class SmartEndpointViewMixin:
         return endpoint
 
     def match_endpoint_by_label(self):
-        return Endpoint.match_by_instance_label(self.target_instance, self.target_protocol)
+        return Endpoint.match_by_instance_label(self.target_instance, self.target_protocol, self.request)
 
     def match_endpoint_by_target_ip(self):
         target_ip = self.request.GET.get('target_ip', '')  # 支持target_ip参数，用来方便测试

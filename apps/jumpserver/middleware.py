@@ -4,18 +4,17 @@ import json
 import os
 import re
 import time
+from urllib.parse import urlparse, quote
 
 import pytz
-from channels.db import database_sync_to_async
 from django.conf import settings
 from django.core.exceptions import MiddlewareNotUsed
-from django.core.handlers.asgi import ASGIRequest
 from django.http.response import HttpResponseForbidden
 from django.shortcuts import HttpResponse
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone
 
-from authentication.backends.drf import (SignatureAuthentication,
-                                         AccessTokenAuthentication)
 from .utils import set_current_request
 
 
@@ -70,11 +69,6 @@ class RequestMiddleware:
     def __call__(self, request):
         set_current_request(request)
         response = self.get_response(request)
-        is_request_api = request.path.startswith('/api')
-        if not settings.SESSION_EXPIRE_AT_BROWSER_CLOSE and \
-                not is_request_api:
-            age = request.session.get_expiry_age()
-            request.session.set_expiry(age)
         return response
 
 
@@ -98,6 +92,19 @@ class RefererCheckMiddleware:
         if not match:
             return HttpResponseForbidden('CSRF CHECK ERROR')
         response = self.get_response(request)
+        return response
+
+
+class SQLCountMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+        if not settings.DEBUG_DEV:
+            raise MiddlewareNotUsed
+
+    def __call__(self, request):
+        from django.db import connection
+        response = self.get_response(request)
+        response['X-JMS-SQL-COUNT'] = len(connection.queries) - 2
         return response
 
 
@@ -135,33 +142,29 @@ class EndMiddleware:
         return response
 
 
-@database_sync_to_async
-def get_signature_user(scope):
-    headers = dict(scope["headers"])
-    if not headers.get(b'authorization'):
-        return
-    if scope['type'] == 'websocket':
-        scope['method'] = 'GET'
-    try:
-        # 因为 ws 使用的是 scope，所以需要转换成 request 对象，用于认证校验
-        request = ASGIRequest(scope, None)
-        backends = [SignatureAuthentication(),
-                    AccessTokenAuthentication()]
-        for backend in backends:
-            user, _ = backend.authenticate(request)
-            if user:
-                return user
-    except Exception as e:
-        print(e)
-    return None
+class SafeRedirectMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
 
+    def __call__(self, request):
+        response = self.get_response(request)
 
-class WsSignatureAuthMiddleware:
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        user = await get_signature_user(scope)
-        if user:
-            scope['user'] = user
-        return await self.app(scope, receive, send)
+        if not (300 <= response.status_code < 400):
+            return response
+        if request.resolver_match and request.resolver_match.namespace.startswith('authentication'):
+            # 认证相关的路由跳过验证（core/auth/xxxx
+            return response
+        location = response.get('Location')
+        if not location:
+            return response
+        parsed = urlparse(location)
+        if parsed.scheme and parsed.netloc:
+            target_host = parsed.netloc
+            if target_host in [*settings.ALLOWED_HOSTS]:
+                return response
+            origin = f"{request.scheme}://{request.get_host()}"
+            target_origin = f"{parsed.scheme}://{target_host}"
+            if not target_origin.startswith(origin):
+                safe_redirect_url = '%s?%s' % (reverse('redirect-confirm'), f'next={quote(location)}')
+                return redirect(safe_redirect_url)
+        return response
