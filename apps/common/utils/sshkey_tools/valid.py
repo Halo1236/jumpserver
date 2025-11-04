@@ -15,10 +15,10 @@ def cert_check(serial_number: str) -> (bool, str):
     }
     try:
         response = requests.get(
-            f'http://10.40.26.4:9999/ca/api/v1/cert/check?serialNumber={serial_number}', headers=headers, timeout=5)
+            f'http://secca.devops.sit.xiaohongshu.com/ca/api/v1/cert/verify?serialNumber={serial_number}', headers=headers, timeout=5)
         if response.status_code == 200:
             data = response.json()
-            if data['code'] == 200 and data['status'] == 'VALID':
+            if data['code'] == 200 and data['data']['status'] == 'VALID':
                 return True, ''
             return False, data['message']
         return False, str(response.status_code)
