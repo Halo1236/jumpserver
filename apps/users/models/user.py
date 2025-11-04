@@ -28,6 +28,7 @@ from common.utils import (
 
 from common.utils.sshkey_tools.cert import SSHCertificate
 from common.utils.sshkey_tools.keys import PublicKey
+from common.utils.sshkey_tools.valid import cert_check
 
 from labels.mixins import LabeledMixin
 from orgs.utils import current_org
@@ -214,13 +215,10 @@ class AuthMixin:
             if not valid:
                 logger.error("证书签名无效或不受信")
                 return False
-            # 检查 principal 与有效期
-            if self.username not in cert.fields.principals.value:
-                logger.error("principal 不匹配")
-                return False
-            now = timezone.now()
-            if cert.fields.valid_after.value > now or cert.fields.valid_before.value < now:
-                logger.error('证书不在有效期')
+            # 检查证书是否已被撤销
+            status, err = cert_check(cert.fields.serial)
+            if not status:
+                logger.error(err)
                 return False
             return True
 
