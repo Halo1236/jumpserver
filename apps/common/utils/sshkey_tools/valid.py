@@ -10,7 +10,7 @@ def cert_check(serial_number: str) -> (bool, str):
     """
 
     headers = {
-        'Authorization': 'token xxxxxx',
+        'token': 'xxx',
         'Content-Type': 'application/json'
     }
     try:
