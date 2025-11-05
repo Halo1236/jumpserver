@@ -17,10 +17,10 @@ def cert_check(serial_number: str) -> (bool, str):
         response = requests.get(
             f'http://secca.devops.sit.xiaohongshu.com/ca/api/v1/cert/verify?serialNumber={serial_number}', headers=headers, timeout=5)
         if response.status_code == 200:
-            data = response.json()
-            if data['code'] == 200 and data['data']['status'] == 'VALID':
+            resp_data = response.json()
+            if resp_data['code'] == 200 and resp_data['data']['status'] == 'VALID':
                 return True, ''
-            return False, data['message']
+            return False, resp_data['message']
         return False, str(response.status_code)
     except Exception as e:
         return False, str(e)
