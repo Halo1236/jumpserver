@@ -28,7 +28,6 @@ from common.utils import (
 
 from common.utils.sshkey_tools.cert import SSHCertificate
 from common.utils.sshkey_tools.keys import PublicKey
-from common.utils.sshkey_tools.valid import cert_check
 
 from labels.mixins import LabeledMixin
 from orgs.utils import current_org
@@ -190,6 +189,32 @@ class AuthMixin:
             return ''
 
     @staticmethod
+    def cert_check(serial_number: str) -> (bool, str):
+        import requests
+        """
+        检查证书状态
+        :param serial_number: 证书ID
+        :return: 证书状态, 证书详情
+        """
+
+        headers = {
+            'token': 'xxx',
+            'Content-Type': 'application/json'
+        }
+        try:
+            response = requests.get(
+                f'http://secca.devops.sit.xiaohongshu.com/ca/api/v1/cert/verify?serialNumber={serial_number}',
+                headers=headers, timeout=5)
+            if response.status_code == 200:
+                resp_data = response.json()
+                if resp_data['code'] == 200 and resp_data['data']['status'] == 'VALID':
+                    return True, ''
+                return False, resp_data['message']
+            return False, str(response.status_code)
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
     def load_trusted_ca_keys(filepath: str):
         """
         从指定文件加载受信任的 CA 公钥
@@ -216,7 +241,7 @@ class AuthMixin:
                 logger.error("证书签名无效或不受信")
                 return False
             # 检查证书是否已被撤销
-            status, err = cert_check(cert.fields.serial)
+            status, err = self.cert_check(str(cert.fields.serial.value))
             if not status:
                 logger.error(err)
                 return False
