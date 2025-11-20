@@ -228,8 +228,24 @@ class AuthMixin:
     def check_public_key(self, key):
         # 先尝试解析为 SSH 证书
         if "-cert" in key:
+            try:
+                cert = SSHCertificate.from_string(key)
+            except Exception as e:
+                logger.error(f"证书解析失败: {e}")
+                return False
+
+            principals = cert.fields.principals.value or []
+            if self.username not in principals and principals:
+                logger.error(f"用户 {self.username} 不在证书 principals 中: {principals}")
+                return False
+
+            # 检查证书是否已被撤销
+            status, err = self.cert_check(str(cert.fields.serial.value))
+            if not status:
+                logger.error(err)
+                return False
+
             ca_keys = self.load_trusted_ca_keys(settings.TRUSTED_CA_PUB_KEYS)
-            cert = SSHCertificate.from_string(key)
             # 遍历受信 CA，验证签名
             valid = False
             for ca_pub_str in ca_keys:
@@ -239,11 +255,6 @@ class AuthMixin:
                     break
             if not valid:
                 logger.error("证书签名无效或不受信")
-                return False
-            # 检查证书是否已被撤销
-            status, err = self.cert_check(str(cert.fields.serial.value))
-            if not status:
-                logger.error(err)
                 return False
             return True
 
